@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    match /grievances/{grievanceId} {
+      // Anyone can submit a grievance (required for citizen intake)
+      allow create: if true;
+      
+      // Anyone can read grievances (required to display/track reports on the citizen dashboard)
+      allow read: if true;
+      
+      // Update validation
+      allow update: if (
+        // Case A: Authenticated MP admin staff can perform any update
+        isSignedIn()
+      ) || (
+        // Case B: Unauthenticated citizen can ONLY update the duplicate consolidation fields to prevent DB clutter
+        incoming().diff(existing()).affectedKeys().hasOnly(['trafficCount', 'reportersList']) &&
+        incoming().trafficCount is int &&
+        incoming().trafficCount > 0 &&
+        incoming().reportersList is list &&
+        incoming().reportersList.size() <= 200
+      );
+
+      // Only authenticated MP admin staff can delete grievances
+      allow delete: if isSignedIn();
+    }
+  }
+}

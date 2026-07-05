@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "Grievance": {
+      "title": "Grievance",
+      "description": "A citizen grievance ticket submitted to the MP",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the citizen who submitted the grievance"
+        },
+        "contact": {
+          "type": "string",
+          "description": "Contact phone number of the citizen"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the issue"
+        },
+        "department": {
+          "type": "string",
+          "enum": ["Garbage Report", "Water Logging", "Potholes"],
+          "description": "The target department assigned by Gemini"
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["Low", "Medium", "High"],
+          "description": "Urgency rating determined by Gemini"
+        },
+        "cleanLocation": {
+          "type": "string",
+          "description": "Standardized landmark or address extracted by Gemini"
+        },
+        "summary": {
+          "type": "string",
+          "description": "1-sentence summary extracted by Gemini"
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude coordinate of the grievance"
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude coordinate of the grievance"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Open", "Resolved"],
+          "description": "Current status of the grievance"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the grievance was submitted"
+        }
+      },
+      "required": ["name", "contact", "description", "department", "urgency", "cleanLocation", "summary", "latitude", "longitude", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "grievances/{grievanceId}": {
+      "schema": "Grievance",
+      "description": "Collection of citizen grievances"
+    }
+  }
+}
