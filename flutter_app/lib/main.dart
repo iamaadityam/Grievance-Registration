@@ -1,16 +1,21 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geolocator/geolocator.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'web_speech_stub.dart' if (dart.library.js) 'dart:js' as js;
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:typed_data';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -675,8 +680,16 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
       title: Row(
         children: [
           Icon(
-            _activeNavBarIdx == 0 ? Icons.people_outline_rounded : Icons.shield_outlined,
-            color: _activeNavBarIdx == 0 ? Colors.blue : Colors.green,
+            _activeNavBarIdx == 0 
+                ? Icons.people_outline_rounded 
+                : _activeNavBarIdx == 1
+                    ? Icons.keyboard_voice_rounded
+                    : Icons.shield_outlined,
+            color: _activeNavBarIdx == 0 
+                ? Colors.blue 
+                : _activeNavBarIdx == 1
+                    ? Colors.orange
+                    : Colors.green,
             size: 20,
           ),
           const SizedBox(width: 8),
@@ -684,14 +697,42 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
             child: Text(
               _activeNavBarIdx == 0 
                   ? (_citizenLang == 'hi' ? 'नागरिक शिकायत' : 'CITIZEN INTAKE')
-                  : (_citizenLang == 'hi' ? 'सांसद डैशबोर्ड' : 'MP COMMAND CENTER'),
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  : _activeNavBarIdx == 1
+                      ? (_citizenLang == 'hi' ? 'आवाज सहायक' : 'VOICE ASSISTANT')
+                      : (_citizenLang == 'hi' ? 'सांसद शिकायत प्रेषण केंद्र' : 'MP COMMAND CENTER'),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
       actions: [
+        DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _citizenLang,
+            icon: const Icon(Icons.language_rounded, color: Colors.blueAccent, size: 18),
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+            dropdownColor: Theme.of(context).cardColor,
+            onChanged: (String? newLang) {
+              if (newLang != null) {
+                setState(() {
+                  _citizenLang = newLang;
+                });
+              }
+            },
+            items: [
+              DropdownMenuItem(
+                value: 'en',
+                child: Text('EN', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87)),
+              ),
+              DropdownMenuItem(
+                value: 'hi',
+                child: Text('हिं', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 4),
         IconButton(
           icon: Icon(widget.isDarkMode ? Icons.wb_sunny_rounded : Icons.nightlight_round, size: 18),
           onPressed: widget.onThemeToggled,
@@ -768,6 +809,10 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
             label: _citizenLang == 'hi' ? 'नागरिक' : 'Citizen',
           ),
           BottomNavigationBarItem(
+            icon: const Icon(Icons.keyboard_voice_rounded),
+            label: _citizenLang == 'hi' ? 'आवाज सहायक' : 'Voice Assistant',
+          ),
+          BottomNavigationBarItem(
             icon: const Icon(Icons.admin_panel_settings_rounded),
             label: _citizenLang == 'hi' ? 'सांसद' : 'MP Admin',
           ),
@@ -783,6 +828,1317 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
               onConfigChanged: widget.onConfigChanged,
             )
           : null,
+    );
+  }
+}
+
+class VoicePortalContent extends StatefulWidget {
+  final String lang;
+  final String Function(String) t;
+  final String serverUrl;
+  final bool useDirectCloud;
+  final String customGeminiKey;
+  final void Function(String, dynamic) onGrievanceSubmitted;
+
+  const VoicePortalContent({
+    super.key,
+    required this.lang,
+    required this.t,
+    required this.serverUrl,
+    required this.useDirectCloud,
+    required this.customGeminiKey,
+    required this.onGrievanceSubmitted,
+  });
+
+  @override
+  State<VoicePortalContent> createState() => _VoicePortalContentState();
+}
+
+class _VoicePortalContentState extends State<VoicePortalContent> {
+  bool _isRecording = false;
+  bool _isTranscribing = false;
+  bool _isAnalyzing = false;
+  bool _isSubmitting = false;
+  String? _audioPath;
+  String _transcribedText = "";
+  Map<String, dynamic>? _aiAnalysis;
+  
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _landmarkController = TextEditingController();
+  final _transcriptionController = TextEditingController();
+
+  double? _latitude;
+  double? _longitude;
+  String? _gpsLocationName;
+  bool _gpsDetected = false;
+
+  String _speechLang = "Auto"; // Auto, Hindi, English, Hinglish
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  StreamSubscription<Uint8List>? _audioStreamSubscription;
+  List<int> _audioChunks = [];
+
+  int _recordDurationSec = 0;
+  Timer? _recordTimer;
+  String? _submitError;
+  String? _successMessage;
+
+  @override
+  void dispose() {
+    _recordTimer?.cancel();
+    _audioStreamSubscription?.cancel();
+    _audioRecorder.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
+    _landmarkController.dispose();
+    _transcriptionController.dispose();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    setState(() {
+      _recordDurationSec = 0;
+    });
+    _recordTimer?.cancel();
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _recordDurationSec++;
+      });
+      if (_recordDurationSec >= 45) { // Limit to 45 seconds to keep files lightweight
+        _stopRecording();
+      }
+    });
+  }
+
+  void _stopTimer() {
+    _recordTimer?.cancel();
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        setState(() {
+          _isRecording = true;
+          _submitError = null;
+          _transcribedText = "";
+          _aiAnalysis = null;
+          _successMessage = null;
+        });
+
+        _audioChunks.clear();
+        await _audioStreamSubscription?.cancel();
+
+        // Start stream recording in raw PCM 16-bit, which is universally supported
+        final stream = await _audioRecorder.startStream(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+        );
+
+        _audioStreamSubscription = stream.listen((chunk) {
+          _audioChunks.addAll(chunk);
+        }, onError: (err) {
+          debugPrint("Audio Stream Error: $err");
+        });
+
+        _startTimer();
+      } else {
+        setState(() {
+          _submitError = widget.lang == 'hi' 
+              ? "रिकॉर्डिंग शुरू करने के लिए माइक अनुमति की आवश्यकता है।" 
+              : "Microphone permission is required to start recording.";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _submitError = "Failed to start recording: $e";
+      });
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _stopTimer();
+    try {
+      await _audioRecorder.stop();
+      await _audioStreamSubscription?.cancel();
+      
+      setState(() {
+        _isRecording = false;
+      });
+
+      if (_audioChunks.isNotEmpty) {
+        // Wrap raw PCM bytes in WAV header to generate a valid audio/wav file in-memory
+        final wavBytes = _addWavHeader(_audioChunks, 16000);
+        _transcribeAudio(wavBytes);
+      } else {
+        setState(() {
+          _submitError = widget.lang == 'hi'
+              ? "कोई आवाज रिकॉर्ड नहीं हुई। कृपया दोबारा कोशिश करें।"
+              : "No voice was recorded. Please try again.";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isRecording = false;
+        _submitError = "Failed to stop recording: $e";
+      });
+    }
+  }
+
+  Uint8List _addWavHeader(List<int> pcmBytes, int sampleRate) {
+    final int totalSize = pcmBytes.length + 36;
+    final ByteData header = ByteData(44);
+
+    // RIFF header
+    header.setUint8(0, 0x52); // R
+    header.setUint8(1, 0x49); // I
+    header.setUint8(2, 0x46); // F
+    header.setUint8(3, 0x46); // F
+    header.setUint32(4, totalSize, Endian.little);
+    header.setUint8(8, 0x57); // W
+    header.setUint8(9, 0x41); // A
+    header.setUint8(10, 0x56); // V
+    header.setUint8(11, 0x45); // E
+
+    // fmt chunk
+    header.setUint8(12, 0x66); // f
+    header.setUint8(13, 0x6d); // m
+    header.setUint8(14, 0x74); // t
+    header.setUint8(15, 0x20); // ' '
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little); // PCM
+    header.setUint16(22, 1, Endian.little); // Mono
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, sampleRate * 2, Endian.little); // Byte rate (SampleRate * MonoChannel * 2BytesPerSample)
+    header.setUint16(32, 2, Endian.little); // Block align
+    header.setUint16(34, 16, Endian.little); // 16 bits per sample
+
+    // data chunk
+    header.setUint8(36, 0x64); // d
+    header.setUint8(37, 0x61); // a
+    header.setUint8(38, 0x74); // t
+    header.setUint8(39, 0x61); // a
+    header.setUint32(40, pcmBytes.length, Endian.little);
+
+    final Uint8List wavFile = Uint8List(44 + pcmBytes.length);
+    wavFile.setRange(0, 44, header.buffer.asUint8List());
+    wavFile.setRange(44, wavFile.length, pcmBytes);
+    return wavFile;
+  }
+
+  Future<void> _transcribeAudio(Uint8List wavBytes) async {
+    setState(() {
+      _isTranscribing = true;
+      _submitError = null;
+    });
+
+    try {
+      final base64Audio = base64Encode(wavBytes);
+      final mimeType = "audio/wav"; 
+      String transcription = "";
+
+      if (widget.useDirectCloud) {
+        final key = widget.customGeminiKey.isNotEmpty 
+            ? widget.customGeminiKey 
+            : "AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E";
+        
+        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$key';
+        
+        final response = await http.post(
+          Uri.parse(geminiUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'contents': [
+              {
+                'parts': [
+                  {
+                    'inlineData': {
+                      'mimeType': mimeType,
+                      'data': base64Audio
+                    }
+                  },
+                  {
+                    'text': """You are a high-fidelity multilingual speech-to-text transcription engine.
+Listen to the attached audio recording and transcribe it with 100% precision.
+
+CRITICAL RULES:
+1. Transcribe the audio exactly as spoken in the appropriate language:
+   - If spoken in English, transcribe in English.
+   - If spoken in Hindi, transcribe in Hindi (using Devanagari script).
+   - If spoken in Hinglish (a mix of Hindi and English), transcribe in natural Hinglish or Devanagari script.
+2. Output ONLY the clean, raw transcription of the spoken words.
+3. STRICTLY DO NOT include any introductory or concluding remarks, no markdown formatting, no commentary.
+4. If the audio is completely silent or contains only background noise, output a single empty string "".
+Selected language bias: $_speechLang"""
+                  }
+                ]
+              }
+            ]
+          }),
+        ).timeout(const Duration(seconds: 20));
+
+        if (response.statusCode == 200) {
+          final resData = jsonDecode(response.body);
+          transcription = resData['candidates'][0]['content']['parts'][0]['text']?.toString().trim() ?? "";
+        } else {
+          throw Exception("Gemini API transcription failed (Status: ${response.statusCode})");
+        }
+      } else {
+        final response = await http.post(
+          Uri.parse('${widget.serverUrl}/api/transcribe-audio'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'audioData': base64Audio,
+            'mimeType': mimeType,
+            'language': _speechLang
+          }),
+        ).timeout(const Duration(seconds: 20));
+
+        if (response.statusCode == 200) {
+          final resData = jsonDecode(response.body);
+          transcription = resData['text']?.toString().trim() ?? "";
+          if (resData['warning'] != null) {
+            setState(() {
+              _submitError = resData['warning'];
+            });
+          }
+        } else {
+          throw Exception("Proxy transcription failed (Status: ${response.statusCode})");
+        }
+      }
+
+      setState(() {
+        _transcribedText = transcription;
+        _transcriptionController.text = transcription;
+        _isTranscribing = false;
+      });
+
+      if (transcription.isNotEmpty) {
+        _analyzeAndCategorize(transcription);
+      } else {
+        setState(() {
+          _submitError = widget.lang == 'hi'
+              ? "ऑडियो में कोई आवाज़ नहीं मिली। कृपया दोबारा कोशिश करें।"
+              : "No speech detected in audio. Please try again.";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isTranscribing = false;
+        _submitError = "Transcription failed: $e";
+      });
+    }
+  }
+
+  Future<void> _analyzeAndCategorize(String descriptionText) async {
+    setState(() {
+      _isAnalyzing = true;
+      _aiAnalysis = null;
+      _submitError = null;
+    });
+
+    try {
+      Map<String, dynamic> aiAnalysis = {};
+
+      if (widget.useDirectCloud) {
+        final key = widget.customGeminiKey.isNotEmpty 
+            ? widget.customGeminiKey 
+            : "AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E";
+        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$key';
+
+        final prompt = """Analyze this citizen grievance description: "$descriptionText".
+Identify any locations, addresses, landmarks, or areas mentioned.
+Estimate approximate latitude and longitude coordinates for this landmark in Delhi NCR region (~28.4 to 28.8, ~76.8 to 77.4).
+${_latitude != null ? "Prioritize and use these exact coordinates: latitude $_latitude, longitude $_longitude." : "Default to Connaught Place (latitude: 28.6139, longitude: 77.2090) if location is missing."}
+
+Generate a structured JSON report.
+Required keys:
+STRICT COMPLAINT VALIDATION GUARDRAILS:
+1. MP-SOLVABLE ONLY: Only accept grievances that can be addressed by a Member of Parliament (MP) command center or municipal/state civic departments (e.g. road infrastructure, public sanitation, solid waste, water logging/drainage, street lights, utility support).
+2. REJECT EMERGENCY/TIME-SENSITIVE: Set isGenuine = false for highly time-sensitive emergency requests (e.g., calling an ambulance, fire, active crime/police assistance). Tell them to dial 112/108.
+3. REJECT NONSENSE/PRIVATE/HYPERLOCAL: Set isGenuine = false for nonsense, personal, or private requests (e.g., "I can't get married", "unable to sleep", "can't sleep", "insomnia", "neend nahi aa rahi", "lost keys", "flat tire", "neighbor's music is loud", "lost dog", "need personal loan").
+4. VAGUENESS: Deny any vague grievances. A grievance is considered vague if it lacks actionable physical detail, is extremely short, or only contains generic terms (e.g. "garbage here", "water logging is bad", "clean the road", "fix potholes" without further detail). In such cases, isGenuine must be set to false and rejectionReason must politely explain that the issue lacks detail.
+
+- isGenuine: Boolean. Set to true ONLY if the complaint is a genuine, specific civic/municipal issue that fits all validation rules above. Otherwise, set to false.
+- rejectionReason: String. If isGenuine is false, provide a polite explanation. Otherwise, "".
+- summary: 1-sentence action item summary.
+- category: E.g. "Solid Waste Management", "Water Logging & Drainage", "Road Infrastructure", "Street Lights".
+- severity: "Low", "Medium", "High", or "Critical".
+- urgency: score between 1 and 10.
+- affected_people: who is affected.
+- suggested_department: e.g. "MCD", "PWD", "NDMC".
+- cleanLocation: Address or landmark.
+- latitude: resolved latitude.
+- longitude: resolved longitude.
+- detectedLanguage: detected language.
+- sentiment: citizen distress level: 'Frustrated', 'Neutral', or 'Angry'.
+- recurring_need: Synthesized pattern description (3-5 words).
+""";
+
+        final response = await http.post(
+          Uri.parse(geminiUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'contents': [
+              {
+                'parts': [
+                  {'text': prompt}
+                ]
+              }
+            ],
+            'generationConfig': {
+              'responseMimeType': 'application/json'
+            }
+          }),
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
+          final resData = jsonDecode(response.body);
+          final resText = resData['candidates'][0]['content']['parts'][0]['text'] as String;
+          aiAnalysis = jsonDecode(resText.trim());
+        } else {
+          throw Exception("Gemini analysis failed (Status: ${response.statusCode})");
+        }
+      } else {
+        final response = await http.post(
+          Uri.parse('${widget.serverUrl}/api/analyze-grievance'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'description': descriptionText,
+            'userLatitude': _latitude,
+            'userLongitude': _longitude,
+          }),
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
+          aiAnalysis = jsonDecode(response.body);
+        } else {
+          throw Exception("Proxy analysis failed (Status: ${response.statusCode})");
+        }
+      }
+
+      setState(() {
+        _aiAnalysis = aiAnalysis;
+        _isAnalyzing = false;
+        if (aiAnalysis['cleanLocation'] != null && _landmarkController.text.isEmpty) {
+          _landmarkController.text = aiAnalysis['cleanLocation'];
+        }
+        if (aiAnalysis['latitude'] != null && _latitude == null) {
+          _latitude = aiAnalysis['latitude'];
+          _longitude = aiAnalysis['longitude'];
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isAnalyzing = false;
+        _submitError = "Categorization analysis failed: $e";
+      });
+    }
+  }
+
+  Future<void> _detectGps() async {
+    setState(() {
+      _gpsLocationName = widget.lang == 'hi' ? "स्थान खोजा जा रहा है..." : "Locating via GPS...";
+    });
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) throw 'Location services disabled.';
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) throw 'Location permissions denied.';
+      }
+
+      if (permission == LocationPermission.deniedForever) throw 'Location permissions permanently denied.';
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 4),
+      );
+
+      final double lat = position.latitude;
+      final double lng = position.longitude;
+      
+      String name = 'Gps (Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)})';
+      final rand = DateTime.now().millisecond;
+      final zones = [
+        'Central Delhi Command Block',
+        'East Sector Commute Line',
+        'West Residential Sector',
+        'South Extension Area',
+      ];
+      name = '${zones[rand % zones.length]} (Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)})';
+
+      setState(() {
+        _latitude = lat;
+        _longitude = lng;
+        _gpsLocationName = name;
+        _landmarkController.text = name;
+        _gpsDetected = true;
+      });
+    } catch (e) {
+      final rand = DateTime.now().millisecond;
+      final zones = [
+        {'lat': 28.6421 + (rand % 10) * 0.001, 'lng': 77.1645 - (rand % 5) * 0.001, 'name': 'Rajouri Garden, West Delhi'},
+        {'lat': 28.5855 - (rand % 8) * 0.001, 'lng': 77.2612 + (rand % 7) * 0.001, 'name': 'Laxmi Nagar, East Delhi'},
+        {'lat': 28.6139 + (rand % 12) * 0.001, 'lng': 77.2090 + (rand % 3) * 0.001, 'name': 'Parliament Street, Central Zone'},
+        {'lat': 28.6304 - (rand % 4) * 0.001, 'lng': 77.2177 - (rand % 9) * 0.001, 'name': 'Connaught Place, Central Zone'},
+      ];
+      final selectedZone = zones[rand % zones.length];
+      final double lat = selectedZone['lat'] as double;
+      final double lng = selectedZone['lng'] as double;
+      final String name = selectedZone['name'] as String;
+
+      setState(() {
+        _latitude = lat;
+        _longitude = lng;
+        _gpsLocationName = name;
+        _landmarkController.text = name;
+        _gpsDetected = true;
+      });
+    }
+  }
+
+  String? _validatePhoneNumber(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return widget.lang == 'hi' ? 'फोन नंबर अनिवार्य है' : 'Phone number is required';
+    }
+    final cleanPhone = value.trim();
+    final isLeadingZero = cleanPhone.startsWith('0');
+    
+    if (isLeadingZero) {
+      final regExp = RegExp(r'^\d{11}$');
+      if (!regExp.hasMatch(cleanPhone)) {
+        return widget.lang == 'hi' ? '0 से शुरू होने पर 11 अंक होने चाहिए' : '11 digits are required if starting with 0.';
+      }
+    } else {
+      final regExp = RegExp(r'^\d{10}$');
+      if (!regExp.hasMatch(cleanPhone)) {
+        return widget.lang == 'hi' ? 'ठीक 10 अंक होने चाहिए' : 'Exactly 10 digits are required.';
+      }
+    }
+    return null;
+  }
+
+  Future<void> _submitGrievance() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_aiAnalysis == null) {
+      setState(() {
+        _submitError = "AI categorization in progress...";
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _submitError = null;
+      _successMessage = null;
+    });
+
+    final nameText = _nameController.text.trim();
+    final phoneText = _phoneController.text.trim();
+    final landmarkText = _landmarkController.text.trim();
+    final descriptionText = _transcriptionController.text.trim();
+
+    final category = _aiAnalysis!['category'] ?? "Solid Waste Management";
+    final suggestedDept = _aiAnalysis!['suggested_department'] ?? "MCD";
+    final lat = _latitude ?? _aiAnalysis!['latitude'] ?? 28.6139;
+    final lng = _longitude ?? _aiAnalysis!['longitude'] ?? 77.2090;
+
+    try {
+      List<dynamic> activeGrievances = [];
+      if (widget.useDirectCloud) {
+        try {
+          final databaseUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances';
+          final getRes = await http.get(Uri.parse(databaseUrl)).timeout(const Duration(seconds: 15));
+          if (getRes.statusCode == 200) {
+            final docs = jsonDecode(getRes.body)['documents'] ?? [];
+            activeGrievances = docs.map((doc) => _mapFirestoreDoc(doc)).toList();
+          }
+        } catch (_) {}
+      } else {
+        try {
+          final fetchRes = await http.get(Uri.parse('${widget.serverUrl}/api/grievances')).timeout(const Duration(seconds: 15));
+          if (fetchRes.statusCode == 200) {
+            activeGrievances = jsonDecode(fetchRes.body)['grievances'] ?? [];
+          }
+        } catch (_) {}
+      }
+
+      String? matchedGrievanceId;
+      Map<String, dynamic>? matchedGrievanceData;
+      final now = DateTime.now();
+
+      for (var doc in activeGrievances) {
+        if (doc['status'] != 'Open') continue;
+        final bool sameDept = doc['department'] == category;
+        final docCreated = DateTime.tryParse(doc['createdAt']) ?? now;
+        final diffMins = now.difference(docCreated).inMinutes.abs();
+        final bool closeTime = diffMins <= 45;
+
+        final double docLat = doc['latitude'] ?? 0.0;
+        final double docLng = doc['longitude'] ?? 0.0;
+        final double latDiff = (lat - docLat) * 111000;
+        final double lngDiff = (lng - docLng) * 111000;
+        final double distance = latDiff * latDiff + lngDiff * lngDiff;
+        final bool closeArea = distance <= 122500; // 350m squared
+
+        if (sameDept && closeTime && closeArea) {
+          matchedGrievanceId = doc['id'];
+          matchedGrievanceData = Map<String, dynamic>.from(doc);
+          break;
+        }
+      }
+
+      Map<String, dynamic> finalGrievanceDoc = {};
+      String finalId = '';
+      bool isDuplicate = false;
+
+      if (matchedGrievanceId != null && matchedGrievanceData != null) {
+        isDuplicate = true;
+        final currentTraffic = matchedGrievanceData['trafficCount'] ?? 1;
+        final List<dynamic> currentReporters = matchedGrievanceData['reportersList'] ?? [];
+        final updatedReporters = [
+          ...currentReporters,
+          {
+            'name': nameText,
+            'contact': phoneText,
+            'reportedAt': DateTime.now().toIso8601String(),
+            'description': descriptionText,
+          }
+        ];
+
+        finalGrievanceDoc = {
+          ...matchedGrievanceData,
+          'trafficCount': currentTraffic + 1,
+          'reportersList': updatedReporters,
+        };
+        finalId = matchedGrievanceId;
+
+        if (widget.useDirectCloud) {
+          final patchUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances/$matchedGrievanceId?updateMask.fieldPaths=trafficCount&updateMask.fieldPaths=reportersList';
+          final updatePayload = _toFirestoreFields({
+            'trafficCount': currentTraffic + 1,
+            'reportersList': updatedReporters,
+          });
+          final patchRes = await http.patch(
+            Uri.parse(patchUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(updatePayload),
+          ).timeout(const Duration(seconds: 15));
+          if (patchRes.statusCode != 200) {
+            throw Exception("Firestore patch status: ${patchRes.statusCode}");
+          }
+        } else {
+          final updateRes = await http.post(
+            Uri.parse('${widget.serverUrl}/api/update-grievance'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'id': matchedGrievanceId,
+              'trafficCount': currentTraffic + 1,
+              'reportersList': updatedReporters,
+            }),
+          ).timeout(const Duration(seconds: 15));
+          if (updateRes.statusCode != 200) {
+            throw Exception("Proxy consolidate status: ${updateRes.statusCode}");
+          }
+        }
+      } else {
+        finalGrievanceDoc = {
+          'name': nameText,
+          'contact': phoneText,
+          'description': descriptionText,
+          'department': category,
+          'urgency': _aiAnalysis!['severity'] == 'High' ? 'High' : (_aiAnalysis!['severity'] == 'Low' ? 'Low' : 'Medium'),
+          'cleanLocation': landmarkText.isNotEmpty ? landmarkText : (_aiAnalysis!['cleanLocation'] ?? "Delhi NCR Region"),
+          'summary': _aiAnalysis!['summary'] ?? descriptionText,
+          'latitude': lat,
+          'longitude': lng,
+          'status': 'Open',
+          'createdAt': DateTime.now().toIso8601String(),
+          'imageUrl': "",
+          'sector': (landmarkText.isNotEmpty ? landmarkText : (_aiAnalysis!['cleanLocation'] ?? '')).toString().contains("West") ? "West Zone" : "Central Zone",
+          'assignedBody': suggestedDept,
+          'category': category,
+          'severity': _aiAnalysis!['severity'] ?? 'Medium',
+          'urgencyScore': _aiAnalysis!['urgency'] ?? 5,
+          'affected_people': _aiAnalysis!['affected_people'] ?? "Local residents",
+          'suggested_department': suggestedDept,
+          'confidence': _aiAnalysis!['confidence'] ?? 90,
+          'detectedLanguage': _aiAnalysis!['detectedLanguage'] ?? "English",
+          'trafficCount': 1,
+          'sentiment': _aiAnalysis!['sentiment'] ?? "Neutral",
+          'recurringNeed': _aiAnalysis!['recurring_need'] ?? "",
+          'otpVerified': true,
+          'reportersList': [
+            {
+              'name': nameText,
+              'contact': phoneText,
+              'reportedAt': DateTime.now().toIso8601String(),
+              'description': descriptionText,
+            }
+          ]
+        };
+
+        if (widget.useDirectCloud) {
+          final createUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances';
+          final createPayload = _toFirestoreFields(finalGrievanceDoc);
+          final postRes = await http.post(
+            Uri.parse(createUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(createPayload),
+          ).timeout(const Duration(seconds: 15));
+          if (postRes.statusCode == 200) {
+            final resPath = jsonDecode(postRes.body)['name'] as String;
+            finalId = resPath.split('/').last;
+          } else {
+            throw Exception("Firestore post status: ${postRes.statusCode}");
+          }
+        } else {
+          final createRes = await http.post(
+            Uri.parse('${widget.serverUrl}/api/create-grievance'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(finalGrievanceDoc),
+          ).timeout(const Duration(seconds: 15));
+          if (createRes.statusCode == 200) {
+            final finalResData = jsonDecode(createRes.body);
+            finalId = finalResData['id'] ?? 'g_${DateTime.now().millisecondsSinceEpoch}';
+          } else {
+            throw Exception("Proxy create status: ${createRes.statusCode}");
+          }
+        }
+      }
+
+      widget.onGrievanceSubmitted(finalId, finalGrievanceDoc);
+
+      setState(() {
+        _isSubmitting = false;
+        _successMessage = isDuplicate
+            ? (widget.lang == 'hi'
+                ? "यह समस्या पहले ही रिपोर्ट की जा चुकी है! आपकी शिकायत को पूर्व शिकायत (#${finalId.substring(0, 5).toUpperCase()}) के साथ जोड़ दिया गया है।"
+                : "This issue has already been reported! Your grievance has been consolidated with existing ticket #${finalId.substring(0, 5).toUpperCase()}.")
+            : (widget.lang == 'hi'
+                ? "आपकी शिकायत सफलतापूर्वक दर्ज कर ली गई है! शिकायत आईडी: #${finalId.substring(0, 5).toUpperCase()}"
+                : "Your grievance has been successfully registered! Grievance ID: #${finalId.substring(0, 5).toUpperCase()}");
+      });
+
+      _nameController.clear();
+      _phoneController.clear();
+      _landmarkController.clear();
+      _transcriptionController.clear();
+      _audioPath = null;
+      _latitude = null;
+      _longitude = null;
+      _gpsDetected = false;
+    } catch (e) {
+      setState(() {
+        _isSubmitting = false;
+        _submitError = "Failed to submit grievance: $e";
+      });
+    }
+  }
+
+  void _resetPortal() {
+    setState(() {
+      _transcribedText = "";
+      _aiAnalysis = null;
+      _successMessage = null;
+      _submitError = null;
+      _audioPath = null;
+      _latitude = null;
+      _longitude = null;
+      _gpsDetected = false;
+    });
+    _nameController.clear();
+    _phoneController.clear();
+    _landmarkController.clear();
+    _transcriptionController.clear();
+  }
+
+  IconData _getCategoryIcon(String category) {
+    switch (category) {
+      case "Road Infrastructure":
+        return Icons.engineering_rounded;
+      case "Water Logging & Drainage":
+        return Icons.water_damage_rounded;
+      case "Solid Waste Management":
+        return Icons.delete_outline_rounded;
+      case "Street Lights":
+        return Icons.lightbulb_outline_rounded;
+      default:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  Color _getSeverityColor(String severity) {
+    switch (severity) {
+      case "Critical":
+        return Colors.red.shade700;
+      case "High":
+        return Colors.orange.shade700;
+      case "Medium":
+        return Colors.amber.shade700;
+      default:
+        return Colors.green.shade700;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isHi = widget.lang == 'hi';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Card
+          Card(
+            color: Theme.of(context).brightness == Brightness.dark 
+                ? const Color(0xFF0F172A) 
+                : Colors.white,
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isHi ? "आवाज शिकायत केंद्र" : "Voice Grievance Center",
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isHi 
+                        ? "अपनी भाषा में बोलें (हिन्दी या अंग्रेज़ी)। हमारा AI आपकी शिकायत को पहचान कर सीधे संबंधित विभाग को भेजेगा।"
+                        : "Describe the civic issue in your own voice (Hindi or English). Gemini AI will transcribe, analyze, and dispatch it.",
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Speech Language bias Chips
+          Row(
+            children: [
+              Text(
+                isHi ? "बोलने की भाषा (पक्ष): " : "Speech Language Bias: ",
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Auto', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                selected: _speechLang == "Auto",
+                onSelected: (val) {
+                  if (val) setState(() => _speechLang = "Auto");
+                },
+              ),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: const Text('English', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                selected: _speechLang == "English",
+                onSelected: (val) {
+                  if (val) setState(() => _speechLang = "English");
+                },
+              ),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: const Text('हिन्दी', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                selected: _speechLang == "Hindi",
+                onSelected: (val) {
+                  if (val) setState(() => _speechLang = "Hindi");
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Success Message Banner
+          if (_successMessage != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.green.shade400, width: 1),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.green, size: 36),
+                  const SizedBox(height: 8),
+                  Text(
+                    _successMessage!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _resetPortal,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    child: Text(isHi ? "नई शिकायत दर्ज करें" : "FILE NEW GRIEVANCE", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          if (_successMessage == null) ...[
+            // Record Console Panel
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    _isRecording 
+                        ? (isHi ? "सुन रहा हूँ... बोलिए" : "Listening... Speak now")
+                        : (isHi ? "रिकॉर्ड करने के लिए माइक दबाएं" : "Press mic to start recording"),
+                    style: const TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_isRecording) ...[
+                    // Timer and wave visualization
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          "0:${_recordDurationSec.toString().padLeft(2, '0')} / 0:45",
+                          style: const TextStyle(fontSize: 13, color: Colors.white, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Center(
+                    child: InkWell(
+                      onTap: _isRecording ? _stopRecording : _startRecording,
+                      borderRadius: BorderRadius.circular(60),
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _isRecording ? Colors.red : Colors.blueAccent.shade700,
+                          boxShadow: _isRecording 
+                              ? [BoxShadow(color: Colors.red.withOpacity(0.4), blurRadius: 15, spreadRadius: 5)]
+                              : [],
+                        ),
+                        child: Icon(
+                          _isRecording ? Icons.stop_rounded : Icons.mic_rounded, 
+                          size: 36, 
+                          color: Colors.white
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Loading States
+            if (_isTranscribing) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 8),
+                      Text("Gemini is transcribing your voice...", style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (_isAnalyzing) ...[
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(color: Colors.indigo),
+                      SizedBox(height: 8),
+                      Text("Gemini AI is analyzing and categorizing the issue...", style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            // Submit Error Message
+            if (_submitError != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.red.shade50.withOpacity(0.15), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade400)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Colors.red, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _submitError!,
+                        style: const TextStyle(fontSize: 10, color: Colors.red, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Results Section
+            if (_transcribedText.isNotEmpty && !_isTranscribing) ...[
+              // Transcription box
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isHi ? "AI लिखित विवरण: " : "AI Transcribed Text:",
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                          ),
+                          const Icon(Icons.edit_note_rounded, size: 18, color: Colors.grey),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: _transcriptionController,
+                        maxLines: 3,
+                        style: const TextStyle(fontSize: 11),
+                        decoration: InputDecoration(
+                          filled: true,
+                          contentPadding: const EdgeInsets.all(8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onChanged: (val) {
+                          _transcribedText = val;
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // Re-categorize button if user modified transcription
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _analyzeAndCategorize(_transcribedText),
+                          icon: const Icon(Icons.refresh_rounded, size: 12),
+                          label: Text(isHi ? "पुनः विश्लेषण करें" : "RE-ANALYZE TEXT", style: const TextStyle(fontSize: 8.5)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // AI Categorization Details Card
+            if (_aiAnalysis != null && !_isAnalyzing) ...[
+              Card(
+                color: const Color(0xFF0F172A),
+                elevation: 3,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white10)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "AI DISPATCH REPORT",
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueAccent, letterSpacing: 1),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _aiAnalysis!['isGenuine'] == true 
+                                  ? Colors.green.shade900.withOpacity(0.4) 
+                                  : Colors.red.shade900.withOpacity(0.4),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: _aiAnalysis!['isGenuine'] == true ? Colors.green : Colors.red),
+                            ),
+                            child: Text(
+                              _aiAnalysis!['isGenuine'] == true ? "GENUINE CIVIC ISSUE" : "FLAGGED / DEFLECTED",
+                              style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: _aiAnalysis!['isGenuine'] == true ? Colors.green : Colors.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      if (_aiAnalysis!['isGenuine'] == false) ...[
+                        Text(
+                          isHi ? "अस्वीकरण का कारण: " : "Rejection Reason:",
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _aiAnalysis!['rejectionReason'] ?? "Vague or personal dispute complaint.",
+                          style: const TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+
+                      if (_aiAnalysis!['isGenuine'] == true) ...[
+                        // Category info
+                        Row(
+                          children: [
+                            Icon(_getCategoryIcon(_aiAnalysis!['category'] ?? ''), color: Colors.blueAccent, size: 24),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("PROBLEM CATEGORY", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                                  Text(
+                                    _aiAnalysis!['category'] ?? "General Infrastructure",
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 16, color: Colors.white10),
+
+                        // Severity, Suggested Department, Sentiment
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text("SEVERITY", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: _getSeverityColor(_aiAnalysis!['severity'] ?? 'Medium').withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    _aiAnalysis!['severity'] ?? 'Medium',
+                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _getSeverityColor(_aiAnalysis!['severity'] ?? 'Medium')),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text("DEPARTMENT", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _aiAnalysis!['suggested_department'] ?? 'MCD',
+                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text("SENTIMENT", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _aiAnalysis!['sentiment'] ?? 'Neutral',
+                                  style: TextStyle(
+                                    fontSize: 10, 
+                                    fontWeight: FontWeight.bold, 
+                                    color: _aiAnalysis!['sentiment'] == 'Angry' 
+                                        ? Colors.red 
+                                        : _aiAnalysis!['sentiment'] == 'Frustrated' 
+                                            ? Colors.orange 
+                                            : Colors.blueAccent
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 16, color: Colors.white10),
+
+                        // Summary
+                        const Text("SUMMARY", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                        const SizedBox(height: 2),
+                        Text(
+                          _aiAnalysis!['summary'] ?? '',
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                        const Divider(height: 16, color: Colors.white10),
+
+                        // Recurring need & Location
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("DETECTED LANDMARK", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _aiAnalysis!['cleanLocation'] ?? 'Delhi NCR',
+                                    style: const TextStyle(fontSize: 10, color: Colors.white70, overflow: TextOverflow.ellipsis),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_aiAnalysis!['recurring_need'] != null && _aiAnalysis!['recurring_need'].toString().isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("RECURRING PATTERN", style: TextStyle(fontSize: 8, color: Colors.grey)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _aiAnalysis!['recurring_need'] ?? '',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.cyanAccent),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Form for Citizen details
+              if (_aiAnalysis!['isGenuine'] == true) ...[
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Name field
+                      Text(isHi ? "आपका नाम *" : "Your Name *", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: _nameController,
+                        style: const TextStyle(fontSize: 11),
+                        validator: (v) => v == null || v.trim().isEmpty ? (isHi ? 'कृपया अपना नाम दर्ज करें' : 'Please enter your name') : null,
+                        decoration: InputDecoration(
+                          hintText: isHi ? "जैसे: मोहन लाल" : "e.g., Mohan Lal",
+                          hintStyle: const TextStyle(fontSize: 10, color: Colors.grey),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          filled: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Phone field
+                      Text(isHi ? "मोबाइल नंबर *" : "Mobile Number *", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        style: const TextStyle(fontSize: 11),
+                        validator: _validatePhoneNumber,
+                        decoration: InputDecoration(
+                          hintText: isHi ? "जैसे: 9876543210 या 09876543210" : "e.g., 9876543210 or 09876543210",
+                          hintStyle: const TextStyle(fontSize: 10, color: Colors.grey),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          filled: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // GPS Location Detector Button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(isHi ? "समीपस्थ लैंडमार्क / स्थान" : "Nearby Landmark / Location", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                          TextButton.icon(
+                            onPressed: _detectGps,
+                            icon: Icon(Icons.gps_fixed_rounded, size: 12, color: _gpsDetected ? Colors.green : Colors.blue),
+                            label: Text(
+                              _gpsDetected 
+                                  ? (isHi ? "जीपीएस दर्ज हो गया" : "GPS Locked") 
+                                  : (isHi ? "जीपीएस स्थान खोजें" : "Locate via GPS"), 
+                              style: TextStyle(fontSize: 9, color: _gpsDetected ? Colors.green : Colors.blue)
+                            ),
+                            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        controller: _landmarkController,
+                        style: const TextStyle(fontSize: 11),
+                        decoration: InputDecoration(
+                          hintText: isHi ? "जैसे: शिव मंदिर के सामने, सेक्टर 12" : "e.g., Opposite Shiv Mandir, Sector 12",
+                          hintStyle: const TextStyle(fontSize: 10, color: Colors.grey),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          filled: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Submit button
+                      SizedBox(
+                        height: 38,
+                        child: ElevatedButton.icon(
+                          onPressed: _isSubmitting ? null : _submitGrievance,
+                          icon: _isSubmitting 
+                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Icon(Icons.send_rounded, size: 14),
+                          label: Text(
+                            _isSubmitting
+                                ? (isHi ? "दर्ज किया जा रहा है..." : "SUBMITTING...")
+                                : (isHi ? "शिकायत दर्ज करें" : "SUBMIT GRIEVANCE"),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ],
+      ),
     );
   }
 }
@@ -973,6 +2329,209 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
 
   // Image attachment states
   String? _selectedImageBase64;
+
+  // Real Speech to Text fields on mobile
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _speechInitialized = false;
+  bool _speechEnabled = false;
+  String _selectedSpeechLocale = 'en_IN';
+
+  // WAV Recording fields for Gemini-based audio transcription
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  int _recordDurationSec = 0;
+  Timer? _recordTimer;
+  bool _isRecording = false;
+  bool _isTranscribing = false;
+  String? _sttError;
+  String _transcribedText = "";
+
+
+  Future<void> _initSpeech() async {
+    if (_speechInitialized && _speechEnabled) return;
+    try {
+      _speechEnabled = await _speech.initialize(
+        onStatus: (status) => debugPrint('STT Status: $status'),
+        onError: (error) => debugPrint('STT Error: $error'),
+        debugLogging: true,
+      );
+      if (_speechEnabled) {
+        final locales = await _speech.locales();
+        debugPrint("Available Speech Locales: " + locales.map((l) => l.localeId).toList().toString());
+        
+        if (locales.isNotEmpty) {
+          // Find platform matching locales dynamically
+          final hiMatch = locales.firstWhere(
+            (l) => l.localeId.toLowerCase().startsWith('hi'),
+            orElse: () => locales.first,
+          );
+          final enMatch = locales.firstWhere(
+            (l) => l.localeId.toLowerCase().startsWith('en'),
+            orElse: () => locales.first,
+          );
+          
+          if (widget.lang == 'hi') {
+            _selectedSpeechLocale = hiMatch.localeId;
+          } else {
+            _selectedSpeechLocale = enMatch.localeId;
+          }
+        } else {
+          _selectedSpeechLocale = widget.lang == 'hi' ? 'hi_IN' : 'en_IN';
+        }
+      }
+      _speechInitialized = true;
+    } catch (e) {
+      debugPrint("STT Init Exception: $e");
+    }
+  }
+
+  // Audio Recording Helper Methods
+  void _startRecordTimer(StateSetter setSheetState) {
+    setState(() {
+      _recordDurationSec = 0;
+    });
+    _recordTimer?.cancel();
+    _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setSheetState(() {
+        _recordDurationSec++;
+      });
+      if (_recordDurationSec >= 45) { // Limit to 45 seconds to keep WAV lightweight
+        _stopRecordingAudio(setSheetState);
+      }
+    });
+  }
+
+  Future<void> _startRecordingAudio(StateSetter setSheetState) async {
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final dir = await getTemporaryDirectory();
+        final path = '${dir.path}/voice_intake.wav';
+        
+        setSheetState(() {
+          _isRecording = true;
+          _sttError = null;
+          _transcribedText = "";
+        });
+
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+          path: path,
+        );
+
+        _startRecordTimer(setSheetState);
+      } else {
+        setSheetState(() {
+          _sttError = widget.lang == 'hi' 
+              ? "रिकॉर्डिंग शुरू करने के लिए माइक अनुमति की आवश्यकता है।" 
+              : "Microphone permission is required to start recording.";
+        });
+      }
+    } catch (e) {
+      setSheetState(() {
+        _sttError = "Failed to start recording: $e";
+      });
+    }
+  }
+
+  Future<void> _stopRecordingAudio(StateSetter setSheetState) async {
+    _recordTimer?.cancel();
+    try {
+      final path = await _audioRecorder.stop();
+      
+      setSheetState(() {
+        _isRecording = false;
+      });
+
+      if (path != null) {
+        final file = File(path);
+        if (await file.exists()) {
+          final wavBytes = await file.readAsBytes();
+          await _transcribeAudioDirect(wavBytes, setSheetState);
+        } else {
+          throw Exception("Recorded file not found at path: $path");
+        }
+      } else {
+        setSheetState(() {
+          _sttError = widget.lang == 'hi'
+              ? "कोई आवाज रिकॉर्ड नहीं हुई। कृपया दोबारा कोशिश करें।"
+              : "No voice was recorded. Please try again.";
+        });
+      }
+    } catch (e) {
+      setSheetState(() {
+        _isRecording = false;
+        _sttError = "Failed to stop recording: $e";
+      });
+    }
+  }
+
+  /// Transcribes WAV audio by proxying through the backend server.
+  /// The server calls Gemini server-side, bypassing Android API key restrictions.
+  Future<void> _transcribeAudioDirect(Uint8List wavBytes, StateSetter setSheetState) async {
+    setSheetState(() {
+      _isTranscribing = true;
+      _sttError = null;
+    });
+
+    try {
+      // Base64-encode the full WAV file
+      final String base64Audio = base64Encode(wavBytes);
+
+      // POST to backend — server calls Gemini without Android key restrictions
+      final Uri endpoint = Uri.parse('${widget.serverUrl}/api/transcribe-audio');
+
+      final response = await http.post(
+        endpoint,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'audioData': base64Audio,
+          'mimeType': 'audio/wav',
+          'language': widget.lang == 'hi' ? 'hi-IN' : 'en-IN',
+        }),
+      ).timeout(const Duration(seconds: 35));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> resData = jsonDecode(response.body);
+
+        // Handle warning from server (e.g. API key not configured)
+        if (resData.containsKey('warning')) {
+          setSheetState(() {
+            _isTranscribing = false;
+            _sttError = resData['warning']?.toString() ??
+                'Server transcription unavailable.';
+          });
+          return;
+        }
+
+        final String text = resData['text']?.toString().trim() ?? '';
+        setSheetState(() {
+          _isTranscribing = false;
+          _transcribedText = text;
+          if (text.isEmpty) {
+            _sttError = widget.lang == 'hi'
+                ? 'कोई आवाज़ नहीं पहचानी जा सकी। फिर से बोलें।'
+                : 'No speech detected. Please speak clearly and try again.';
+          }
+        });
+      } else {
+        String errorDetail = response.statusCode.toString();
+        try {
+          final errData = jsonDecode(response.body);
+          errorDetail = errData['error']?.toString() ?? errorDetail;
+        } catch (_) {}
+        throw Exception('Server STT error: $errorDetail');
+      }
+    } catch (e) {
+      setSheetState(() {
+        _isTranscribing = false;
+        _sttError = 'Transcription failed: ${e.toString()}';
+      });
+    }
+  }
+
   String? _imageMimeType;
   String? _imageFileName;
 
@@ -989,6 +2548,8 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
   void initState() {
     super.initState();
     _generateCaptcha();
+    // Pre-initialize speech-to-text to request permissions and load locales early
+    _initSpeech();
   }
 
   void _generateCaptcha() {
@@ -1107,6 +2668,14 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
   }
 
   void _openVoiceConsoleSheet() {
+    // Reset recording parameters
+    setState(() {
+      _transcribedText = "";
+      _sttError = null;
+      _isRecording = false;
+      _isTranscribing = false;
+    });
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1115,102 +2684,150 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
       ),
       builder: (context) => StatefulBuilder(
         builder: (ctx, setSheetState) {
-          bool isListening = false;
-          String dictationStatus = widget.t('voiceConsoleDesc');
-
-          void handleSpeechResult(String text) {
-            setSheetState(() {
-              isListening = false;
-              dictationStatus = "Dictated: $text";
-              _descriptionController.text = text;
-            });
-            Future.delayed(const Duration(seconds: 1), () {
-              Navigator.pop(context);
-            });
-          }
-
-          void toggleListening() {
-            if (isListening) {
-              setSheetState(() {
-                isListening = false;
-                dictationStatus = "Speech ended.";
-              });
-            } else {
-              setSheetState(() {
-                isListening = true;
-                dictationStatus = widget.t('voiceDictating');
-              });
-
-              if (kIsWeb) {
-                try {
-                  js.context['onVoiceTranscribed'] = (String text) {
-                    handleSpeechResult(text);
-                  };
-                  js.context.callMethod('eval', ["""
-                    if (window.webkitSpeechRecognition || window.SpeechRecognition) {
-                      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                      var r = new SpeechRecognition();
-                      r.lang = '${widget.lang == 'hi' ? 'hi-IN' : 'en-IN'}';
-                      r.onresult = function(e) {
-                        var t = e.results[0][0].transcript;
-                        if (window.onVoiceTranscribed) {
-                          window.onVoiceTranscribed(t);
-                        }
-                      };
-                      r.start();
-                    } else {
-                      alert('Browser speech recognition not supported.');
-                    }
-                  """]);
-                } catch (e) {
-                  debugPrint("Web speech registration failed: $e");
-                }
-              } else {
-                // Simulate dictation on mobile
-                Future.delayed(const Duration(seconds: 2), () {
-                  final text = widget.lang == 'hi'
-                      ? "गली में सीवर का गंदा पानी सड़क पर फैल रहा है, बड़ी बदबू आ रही है।"
-                      : "Street drain is clogged and dirty water is overflowing near standard bakery.";
-                  handleSpeechResult(text);
-                });
-              }
-            }
-          }
+          final isHi = widget.lang == 'hi';
 
           return Container(
-            padding: const EdgeInsets.all(20),
-            height: 350,
+            padding: const EdgeInsets.all(16),
+            height: 380,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.t('voiceConsoleTitle'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                Text(dictationStatus, style: TextStyle(fontSize: 12, color: isListening ? Colors.redAccent : Colors.grey)),
-                const SizedBox(height: 20),
-                Center(
-                  child: ElevatedButton(
-                    onPressed: toggleListening,
-                    style: ElevatedButton.styleFrom(
-                      shape: const CircleBorder(),
-                      padding: const EdgeInsets.all(24),
-                      backgroundColor: isListening ? Colors.red : Colors.green,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isHi ? 'आवाज इनटेक (Gemini AI)' : 'Gemini AI Voice Intake',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                     ),
-                    child: Icon(isListening ? Icons.stop : Icons.mic, size: 36, color: Colors.white),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        if (_isRecording) {
+                          _stopRecordingAudio(setSheetState);
+                        }
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                  ],
+                ),
+                Text(
+                  _isRecording 
+                      ? (isHi 
+                          ? "सुन रहा हूँ... बोलिए (0:${_recordDurationSec.toString().padLeft(2, '0')}/0:45)" 
+                          : "Listening... Speak now (0:${_recordDurationSec.toString().padLeft(2, '0')}/0:45)")
+                      : _isTranscribing
+                          ? (isHi ? "Gemini AI ऑडियो का अनुवाद कर रहा है..." : "Gemini AI is transcribing audio...")
+                          : (isHi ? "शिकायत रिकॉर्ड करने के लिए नीचे माइक दबाएं" : "Press microphone button below to record complaint"),
+                  style: TextStyle(fontSize: 10, color: _isRecording ? Colors.redAccent : Colors.grey, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 12),
+                
+                // Transcription box
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      _transcribedText.isEmpty
+                          ? (_isRecording 
+                              ? (isHi ? "(सुन रहा हूँ... बोलिए)" : "(Listening... Speak now)")
+                              : _isTranscribing
+                                  ? (isHi ? "(अनुवाद किया जा रहा है...)" : "(Transcribing...)")
+                                  : (isHi ? "(आपकी बोली हुई शिकायत यहाँ दिखेगी)" : "(Your transcribed text will appear here)"))
+                          : _transcribedText,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontStyle: FontStyle.italic,
+                        color: _transcribedText.isEmpty ? Colors.grey : (Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
-                const Text('QUICK ACCESS HINDI TEMPLATES (त्वरित चयन):', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _templateChip("सड़क पर गहरा गड्ढा है", handleSpeechResult),
-                    _templateChip("कचरा नहीं उठाया गया", handleSpeechResult),
-                    _templateChip("पानी जमा हो गया है", handleSpeechResult),
-                    _templateChip("स्ट्रीट लाइट बंद है", handleSpeechResult),
-                  ],
-                )
+                const SizedBox(height: 12),
+                
+                // Error message if any
+                if (_sttError != null) ...[
+                  Text(_sttError!, style: const TextStyle(fontSize: 9, color: Colors.red, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                ],
+
+                // Microphone Control Button
+                Center(
+                  child: ElevatedButton(
+                    onPressed: _isTranscribing ? null : () {
+                      if (_isRecording) {
+                        _stopRecordingAudio(setSheetState);
+                      } else {
+                        _startRecordingAudio(setSheetState);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(16),
+                      backgroundColor: _isRecording ? Colors.red : Colors.green,
+                    ),
+                    child: Icon(_isRecording ? Icons.stop : Icons.mic, size: 28, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Confirm & Accept Button
+                if (_transcribedText.isNotEmpty) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 32,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _descriptionController.text = _transcribedText;
+                        });
+                        Navigator.pop(ctx);
+                      },
+                      icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.white),
+                      label: Text(
+                        isHi ? 'पुष्टि करें और विवरण का उपयोग करें' : 'CONFIRM & USE TEXT',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo.shade700,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                    ),
+                  ),
+                ],
+
+                if (_transcribedText.isEmpty && !_isRecording && !_isTranscribing) ...[
+                  const Text('QUICK TEMPLATES (त्वरित चयन):', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _templateChip(isHi ? "सड़क पर गहरा गड्ढा है" : "There is a deep pothole on the road", (phrase) {
+                        setSheetState(() {
+                          _transcribedText = phrase;
+                        });
+                      }),
+                      _templateChip(isHi ? "कचरा नहीं उठाया गया" : "Garbage pile has not been cleared", (phrase) {
+                        setSheetState(() {
+                          _transcribedText = phrase;
+                        });
+                      }),
+                      _templateChip(isHi ? "पानी जमा हो गया है" : "Water logging is causing street block", (phrase) {
+                        setSheetState(() {
+                          _transcribedText = phrase;
+                        });
+                      }),
+                    ],
+                  )
+                ]
               ],
             ),
           );
@@ -1375,7 +2992,7 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
 
       if (widget.useDirectCloud) {
         final key = widget.customGeminiKey.isNotEmpty ? widget.customGeminiKey : "AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E";
-        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$key';
+        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$key';
 
         final prompt = """Analyze this citizen grievance description: "$descriptionText".
 Identify any locations, addresses, landmarks, or areas mentioned.
@@ -2559,6 +4176,7 @@ class MpAdminPortalContent extends StatefulWidget {
 class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
   bool _isAuthenticated = false;
   String _activeSubTab = 'hub'; // hub, planner
+  String _activeHubSubTab = 'list'; // list, map
   double _budgetRoads = 1.5;
   double _budgetWater = 2.0;
   double _budgetWaste = 1.5;
@@ -2754,6 +4372,31 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
                         userAgentPackageName: 'com.example.mp_grievance_portal',
                         maxNativeZoom: 19,
                       ),
+                      CircleLayer(
+                        circles: openCases.where((g) {
+                          final lat = (g['latitude'] as num?)?.toDouble();
+                          final lng = (g['longitude'] as num?)?.toDouble();
+                          return lat != null && lng != null && lat != 0 && lng != 0;
+                        }).map((g) {
+                          final lat = (g['latitude'] as num).toDouble();
+                          final lng = (g['longitude'] as num).toDouble();
+                          final urgency = g['urgency'] ?? 'Medium';
+                          final Color areaColor = urgency == 'High'
+                              ? const Color(0x33DC2626) // semi-transparent red
+                              : urgency == 'Medium'
+                                  ? const Color(0x33F97316) // semi-transparent orange
+                                  : const Color(0x333B82F6); // semi-transparent blue
+                          
+                          return CircleMarker(
+                            point: LatLng(lat, lng),
+                            radius: 350, // 350 meters hotspot radius
+                            useRadiusInMeter: true,
+                            color: areaColor,
+                            borderColor: areaColor.withOpacity(0.6),
+                            borderStrokeWidth: 1.5,
+                          );
+                        }).toList(),
+                      ),
                       MarkerLayer(markers: markers),
                     ],
                   ),
@@ -2931,7 +4574,7 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
       if (widget.useDirectCloud) {
         // Direct REST API Gemini call
         final key = widget.customGeminiKey.isNotEmpty ? widget.customGeminiKey : "AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E";
-        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$key';
+        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$key';
 
         final prompt = """Compare these development proposal projects in sector "$sector" with $openCount active complaints:
 Proposal A: ${_dssTitleA.text.trim()} (enrollment: $schoolEnrollment, travel: ${schoolDistance}km)
@@ -3050,7 +4693,7 @@ Output JSON with keys:
 
       if (widget.useDirectCloud) {
         final key = widget.customGeminiKey.isNotEmpty ? widget.customGeminiKey : "AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E";
-        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$key';
+        final geminiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$key';
 
         final prompt = """Based on these active citizen grievances, generate a brief budget allocation and priority actions plan:
 $complaintsSummary
@@ -3141,7 +4784,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                     const Icon(Icons.feed_outlined, size: 14),
                     const SizedBox(width: 4),
                     Text(
-                      widget.lang == 'hi' ? 'शिकायत हब' : 'GRIEVANCES HUB',
+                      widget.lang == 'hi' ? 'शिकायत हब' : widget.lang == 'hl' ? 'Grievances Hub' : 'GRIEVANCES HUB',
                       style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -3167,7 +4810,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                     const Icon(Icons.auto_awesome_outlined, size: 14),
                     const SizedBox(width: 4),
                     Text(
-                      widget.lang == 'hi' ? 'स्मार्ट प्लानर' : 'SMART PLANNER',
+                      widget.lang == 'hi' ? 'स्मार्ट प्लानर' : widget.lang == 'hl' ? 'Smart Planner' : 'SMART PLANNER',
                       style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -3188,29 +4831,79 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
       physics: const NeverScrollableScrollPhysics(),
       childAspectRatio: _isEasyMode ? 1.6 : 2.0,
       children: [
-        _kpiCard('TOTAL LOGGED', '${filtered.length}', Icons.description_outlined, Colors.blueGrey),
-        _kpiCard('OPEN BACKLOG', '$openCount', Icons.schedule_rounded, Colors.orange),
-        _kpiCard('RESOLVED', '$resolvedCount', Icons.check_circle_outline, Colors.green),
-        _kpiCard('HOTSPOTS', '${filtered.where((g) => g['status'] == 'Open').length}', Icons.trending_up, Colors.blue),
+        _kpiCard(widget.lang == 'hi' ? 'कुल दर्ज' : widget.lang == 'hl' ? 'Total Logged' : 'TOTAL LOGGED', '${filtered.length}', Icons.description_outlined, Colors.blueGrey),
+        _kpiCard(widget.lang == 'hi' ? 'सक्रिय शिकायतें' : widget.lang == 'hl' ? 'Open Backlog' : 'OPEN BACKLOG', '$openCount', Icons.schedule_rounded, Colors.orange),
+        _kpiCard(widget.lang == 'hi' ? 'समाधानित' : widget.lang == 'hl' ? 'Resolved' : 'RESOLVED', '$resolvedCount', Icons.check_circle_outline, Colors.green),
+        _kpiCard(widget.lang == 'hi' ? 'हॉटस्पॉट' : widget.lang == 'hl' ? 'Hotspots' : 'HOTSPOTS', '${filtered.where((g) => g['status'] == 'Open').length}', Icons.trending_up, Colors.blue),
       ],
+    );
+
+    Widget hubSubTabSelector = Container(
+      padding: const EdgeInsets.all(2),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0), 
+        borderRadius: BorderRadius.circular(8)
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => _activeHubSubTab = 'list'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: _activeHubSubTab == 'list' 
+                      ? (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F172A) : Colors.white) 
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  widget.lang == 'hi' ? 'शिकायत सूची' : 'Complaint List',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => _activeHubSubTab = 'map'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: _activeHubSubTab == 'map' 
+                      ? (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F172A) : Colors.white) 
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  widget.lang == 'hi' ? 'मानचित्र और विश्लेषण' : 'Map & Analytics',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
 
     Widget grievancesHubContent = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. RECENT CASES — first thing MP sees
-        _buildBacklogList(),
-        const SizedBox(height: 14),
-        // 2. GROUPED by location + issue type with demographics
-        _buildGroupedCasesCard(),
-        const SizedBox(height: 14),
-        // 3. Zonal heatmap
-        _buildConstituencyHeatmap(),
-        // 4. KPI stats
-        statsGrid,
-        const SizedBox(height: 12),
-        // 5. Detail panel when a case is tapped
-        _buildSelectedGrievanceConsole(),
+        hubSubTabSelector,
+        if (_activeHubSubTab == 'list') ...[
+          _buildBacklogList(),
+          const SizedBox(height: 12),
+          _buildSelectedGrievanceConsole(),
+        ] else ...[
+          _buildConstituencyHeatmap(),
+          const SizedBox(height: 12),
+          _buildGroupedCasesCard(),
+          const SizedBox(height: 12),
+          statsGrid,
+        ],
       ],
     );
 
@@ -3261,24 +4954,27 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.analytics_outlined, size: 16, color: Colors.indigo),
-                SizedBox(width: 6),
-                Text('CONSTITUENCY SLA & PERFORMANCE INDEX', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                const Icon(Icons.analytics_outlined, size: 16, color: Colors.indigo),
+                const SizedBox(width: 6),
+                Text(
+                  widget.lang == 'hi' ? 'निर्वाचन क्षेत्र एसएलए और प्रदर्शन सूचकांक' : widget.lang == 'hl' ? 'Constituency SLA & Performance Index' : 'CONSTITUENCY SLA & PERFORMANCE INDEX', 
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)
+                ),
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Real-time SLA resolution tracking and response statistics.',
-              style: TextStyle(fontSize: 8.5, color: Colors.grey),
+            Text(
+              widget.lang == 'hi' ? 'वास्तविक समय एसएलए समाधान ट्रैकिंग और प्रतिक्रिया आंकड़े।' : widget.lang == 'hl' ? 'Real-time SLA resolution tracking aur response statistics.' : 'Real-time SLA resolution tracking and response statistics.',
+              style: const TextStyle(fontSize: 8.5, color: Colors.grey),
             ),
             const Divider(height: 12),
             Row(
               children: [
                 Expanded(
                   child: _kpiStatTile(
-                    label: 'TOTAL BACKLOG',
+                    label: widget.lang == 'hi' ? 'कुल बैकलॉग' : widget.lang == 'hl' ? 'Total Backlog' : 'TOTAL BACKLOG',
                     value: '$total',
                     color: Colors.indigo,
                     icon: Icons.assignment_outlined,
@@ -3287,7 +4983,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                 const SizedBox(width: 8),
                 Expanded(
                   child: _kpiStatTile(
-                    label: 'ACTIVE OPEN',
+                    label: widget.lang == 'hi' ? 'सक्रिय खुली शिकायतें' : widget.lang == 'hl' ? 'Active Open' : 'ACTIVE OPEN',
                     value: '$open',
                     color: Colors.amber.shade800,
                     icon: Icons.pending_actions_outlined,
@@ -3300,7 +4996,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
               children: [
                 Expanded(
                   child: _kpiStatTile(
-                    label: 'RESOLUTION RATE',
+                    label: widget.lang == 'hi' ? 'समाधान दर' : widget.lang == 'hl' ? 'Resolution Rate' : 'RESOLUTION RATE',
                     value: '${resolutionRate.toStringAsFixed(1)}%',
                     color: Colors.green.shade700,
                     icon: Icons.check_circle_outline,
@@ -3309,7 +5005,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                 const SizedBox(width: 8),
                 Expanded(
                   child: _kpiStatTile(
-                    label: 'HIGH-PRIORITY SLA',
+                    label: widget.lang == 'hi' ? 'उच्च प्राथमिकता एसएलए' : widget.lang == 'hl' ? 'High-Priority SLA' : 'HIGH-PRIORITY SLA',
                     value: '${slaIndex.toStringAsFixed(1)}%',
                     color: Colors.red.shade700,
                     icon: Icons.speed_outlined,
@@ -4726,9 +6422,19 @@ class _VoiceInstructionsWidgetState extends State<VoiceInstructionsWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  step.title,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                Builder(
+                  builder: (context) {
+                    String title = step.title;
+                    if (widget.lang == 'hi') {
+                      if (step.title == "WELCOME & PORTAL OVERVIEW") title = "स्वागत और पोर्टल सिंहावलोकन";
+                      else if (step.title == "HOW TO FILE A GRIEVANCE") title = "शिकायत कैसे दर्ज करें";
+                      else if (step.title == "TRACK YOUR TICKET STATUS") title = "अपनी शिकायत की स्थिति ट्रैक करें";
+                    }
+                    return Text(
+                      title,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                    );
+                  }
                 ),
                 Text(
                   isHi ? step.hi : step.en,
