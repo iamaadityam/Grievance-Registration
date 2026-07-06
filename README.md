@@ -1,81 +1,273 @@
-# MP Grievance Portal 🇮🇳
+# 🌍 CivicPulse AI
 
-> An AI-powered grievance redressal platform built for **Build with AI: Code for Communities**.
+> **AI-Powered Constituency Intelligence & Development Planning Platform**
 
-The MP Grievance Portal enables citizens to report civic issues effortlessly while providing Members of Parliament with an intelligent dashboard to monitor, prioritize, and respond to complaints.
+🏆 **Built for Build with AI: Code for Communities**
 
----
-
-## Problem Statement
-
-Citizens often struggle to report local issues efficiently, and public representatives receive complaints through fragmented channels that are difficult to organize and prioritize.
-
-Our solution provides a unified platform that uses AI to automatically classify grievances, helping representatives make faster and more informed decisions.
+CivicPulse AI is an AI-powered platform that empowers Members of Parliament (MPs) with actionable constituency intelligence by transforming citizen feedback into data-driven development insights. The platform enables citizens to submit community issues and development suggestions through multiple channels while leveraging Google's AI to identify recurring themes, prioritize community needs, and support evidence-based decision-making.
 
 ---
 
-## Features
+## 📖 The Problem
 
-### Citizen Portal
-- Register complaints
-- Upload images
-- Share live location
-- Offline-first support
-- Designed for low-end Android devices
+Members of Parliament receive development requests through multiple disconnected channels such as public meetings, letters, grievance portals, social media, and direct representations.
 
-### AI Features
-- Automatic grievance classification
+These requests are often:
+
+- Fragmented across multiple communication channels
+- Difficult to organize and prioritize
+- Repetitive or duplicated
+- Lacking geographic and analytical context
+
+As a result, identifying genuine community priorities and planning impactful development projects becomes extremely challenging.
+
+---
+
+## 💡 Our Solution
+
+CivicPulse AI consolidates citizen feedback into a unified AI-powered platform.
+
+Citizens can submit grievances and development suggestions using text, voice, GPS-enabled reports, and supporting images. Google Gemini AI analyzes every submission to automatically classify issues, identify recurring themes, recommend responsible departments, detect duplicate reports, and prioritize requests based on urgency and community demand.
+
+The result is an intelligent Constituency Dashboard that enables MPs to make informed, transparent, and data-driven development decisions.
+
+---
+
+# ✨ Features
+
+## 👤 Citizen Portal
+
+- 📝 Submit grievances and development suggestions
+- 📍 Automatic GPS location detection
+- 📷 Upload supporting photographs
+- 🎤 Voice-assisted input
+- 📡 Offline-first functionality
+- 📋 Track submitted requests
+
+---
+
+## 🏛 Constituency Intelligence Dashboard
+
+- 📊 Live constituency overview
+- 📂 AI-powered issue categorization
+- 📍 Geographic hotspot visualization
+- 📈 Constituency analytics
+- 🚨 Priority-based issue ranking
+- 🔄 Duplicate issue detection
+- 📋 Intelligent issue grouping
+
+---
+
+## 🧠 AI Decision Support System
+
+The integrated Decision Support System assists MPs in comparing competing development priorities using real citizen demand.
+
+Example planning scenarios include:
+
+- School infrastructure upgrades
+- Road repair and maintenance
+- Public sanitation projects
+- Water supply improvements
+- Healthcare facilities
+- Skill development centres
+
+Rather than relying solely on manual feedback, representatives receive AI-assisted recommendations backed by constituency-wide insights.
+
+---
+
+# 🤖 AI Capabilities
+
+Google Gemini powers intelligent analysis including:
+
+- Community issue classification
+- Development theme extraction
 - Complaint summarization
+- Landmark extraction
+- Department recommendation
 - Priority estimation
-- Intelligent routing
-- Duplicate complaint detection *(planned/current)*
+- Duplicate detection
+- Geographic hotspot identification
+
+---
+
+# 🗺 Geospatial Intelligence
+
+Every citizen submission is geotagged and visualized on an interactive constituency map.
+
+This enables representatives to:
+
+- Detect recurring community issues
+- Identify underserved regions
+- Locate infrastructure gaps
+- Monitor development demand hotspots
+- Prioritize resource allocation
+
+---
+
+# 🛠 Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| Frontend | Flutter |
+| Programming Language | Dart |
+| AI | Google Gemini API |
+| Maps | Flutter Map |
+| Location Services | Geolocator |
+| Image Capture | Image Picker |
+| Offline Storage | Shared Preferences |
+| Networking | HTTP |
+
+---
+
+# 🏗 System Architecture
+
+```text
+                 Citizens
+                     │
+                     ▼
+      Voice • Text • Images • GPS
+                     │
+                     ▼
+           Flutter Mobile App
+                     │
+                     ▼
+          Google Gemini AI Engine
+                     │
+      ┌──────────────┼──────────────┐
+      │              │              │
+      ▼              ▼              ▼
+ Classification  Priority Score  Summarization
+      │              │              │
+      └──────────────┼──────────────┘
+                     ▼
+      Constituency Intelligence Engine
+                     │
+      ┌──────────────┼──────────────┐
+      │              │              │
+      ▼              ▼              ▼
+ Analytics     Hotspot Mapping    DSS
+                     │
+                     ▼
+          MP Constituency Dashboard
+```
+
+---
+
+# 📱 Application Modules
+
+### Citizen Interface
+
+- Community Issue Submission
+- Voice Input
+- GPS Detection
+- Image Upload
+- Issue Tracking
 
 ### MP Dashboard
-- Complaint analytics
-- Category-wise breakdown
-- Priority-based sorting
-- Geographic visualization
-- Status tracking
+
+- Constituency Analytics
+- AI Issue Classification
+- Hotspot Visualization
+- Smart Planner
+- Decision Support System
 
 ---
 
-## Tech Stack
+# 🎯 Alignment with the Challenge
 
-| Technology | Usage |
-|------------|-------|
-| Flutter | Mobile Application |
-| Gemini API | AI Classification |
-| Firebase | Backend |
-| Google Maps / Flutter Map | Location Visualization |
-| Shared Preferences | Offline Storage |
-| HTTP | API Communication |
+CivicPulse AI directly addresses the **Build with AI: Code for Communities** challenge by:
 
----
+✅ Collecting citizen feedback
 
-## Why This Matters
+✅ Supporting voice, text, and image-based submissions
 
-✔ Faster grievance resolution
+✅ Using AI to identify recurring community needs
 
-✔ Better transparency
+✅ Mapping development demand hotspots
 
-✔ AI-assisted governance
+✅ Prioritizing constituency issues
 
-✔ Improved citizen engagement
+✅ Supporting AI-assisted development planning
 
-✔ Accessible on low-end smartphones
+✅ Enabling evidence-based decision making for MPs
 
 ---
 
-## Future Scope
+# 🚀 Future Scope
 
-- Voice-based complaint submission
-- Multilingual support
-- WhatsApp integration
-- Department auto-routing
-- Predictive civic analytics
+- 🌐 Multilingual support
+- 💬 WhatsApp Business integration
+- 📊 Integration with Census and data.gov.in datasets
+- 🌦 Weather-aware infrastructure planning
+- 🛰 Satellite imagery integration
+- 📈 Predictive constituency analytics
+- 🤖 AI-generated constituency reports
+- 🏛 Automated department routing
 
 ---
 
-## Built For
+# 📸 Screenshots
 
-🏆 Build with AI: Code for Communities
+| Citizen Portal | MP Dashboard |
+|----------------|--------------|
+| Community Issue Submission | Constituency Dashboard |
+| Issue Tracking | AI Smart Planner |
+| GPS Detection | Hotspot Analytics |
+| Voice Input | Decision Support System |
+
+*(Replace this section with actual screenshots before submission.)*
+
+---
+
+# ⚙ Installation
+
+Clone the repository
+
+```bash
+git clone https://github.com/iamaadityam/Grievance-Registration.git
+```
+
+Navigate to the project
+
+```bash
+cd Grievance-Registration
+```
+
+Install dependencies
+
+```bash
+flutter pub get
+```
+
+Run the application
+
+```bash
+flutter run
+```
+
+---
+
+# 👥 Team
+
+**Team Name:** <Your Team Name>
+
+**Members**
+
+- Aaditya Malhotra
+- <Member 2>
+- <Member 3>
+- <Member 4>
+
+---
+
+# 🏆 Hackathon
+
+**Build with AI: Code for Communities**
+
+Leveraging Google AI to transform citizen participation into smarter constituency development and data-driven governance.
+
+---
+
+# 📜 License
+
+This project was developed as part of the **Build with AI: Code for Communities** hackathon and is intended for educational and demonstration purposes.
