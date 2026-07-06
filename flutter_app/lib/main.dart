@@ -380,6 +380,55 @@ Map<String, dynamic> _mapFirestoreDoc(Map<String, dynamic> docJson) {
   return parsed;
 }
 
+// Custom premium subtle floating Toast helper
+void showSubtleToast(BuildContext context, String message, {bool isError = false}) {
+  ScaffoldMessenger.of(context).clearSnackBars();
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+            color: isError ? Colors.red.shade300 : Colors.green.shade300,
+            size: 13,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xE61E293B), // slate dark semi-transparent
+      elevation: 2,
+      duration: const Duration(milliseconds: 2200),
+      width: 250,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    ),
+  );
+}
+
+// Base64 image sanitizer to prevent format or padding decoding failures
+String _sanitizeBase64(String input) {
+  String clean = input.trim();
+  if (clean.contains(',')) {
+    clean = clean.split(',').last;
+  }
+  // Remove whitespace and newlines
+  clean = clean.replaceAll(RegExp(r'\s+'), '');
+  // Add padding if missing
+  while (clean.length % 4 != 0) {
+    clean += '=';
+  }
+  return clean;
+}
+
 // Formatter to translate raw Dart Maps to Firestore REST API fields structure
 Map<String, dynamic> _toFirestoreFields(Map<String, dynamic> data) {
   final fields = <String, dynamic>{};
@@ -483,7 +532,7 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
     if (widget.useDirectCloud) {
       final databaseUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances';
       try {
-        final res = await http.get(Uri.parse(databaseUrl)).timeout(const Duration(seconds: 4));
+        final res = await http.get(Uri.parse(databaseUrl)).timeout(const Duration(seconds: 15));
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
           final List<dynamic> docs = data['documents'] ?? [];
@@ -542,6 +591,67 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
       _myComplaintIds = [];
       _localFullComplaints = [];
     });
+  }
+
+  Future<void> _resolveGrievance(String gId) async {
+    final bool isOffline = gId.startsWith('offline_');
+    bool success = false;
+    
+    if (!isOffline) {
+      try {
+        if (widget.useDirectCloud) {
+          final updateUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances/' + gId + '?updateMask.fieldPaths=status';
+          final updatePayload = _toFirestoreFields({'status': 'Resolved'});
+          final patchRes = await http.patch(
+            Uri.parse(updateUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(updatePayload),
+          );
+          if (patchRes.statusCode == 200) {
+            success = true;
+          }
+        } else {
+          final res = await http.post(
+            Uri.parse('${widget.serverUrl}/api/update-grievance'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'id': gId,
+              'status': 'Resolved',
+            }),
+          );
+          if (res.statusCode == 200) {
+            success = true;
+          }
+        }
+      } catch (e) {
+        debugPrint("Error resolving online: $e");
+      }
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final updatedFull = _localFullComplaints.map((item) {
+      if (item['id'] == gId) {
+        return {...item, 'status': 'Resolved'};
+      }
+      return item;
+    }).toList();
+    
+    await prefs.setStringList(
+      'citizen_logged_full_complaints',
+      updatedFull.map((item) => jsonEncode(item)).toList(),
+    );
+
+    setState(() {
+      _localFullComplaints = updatedFull;
+      _allGrievances = _allGrievances.map((item) {
+        if (item['id'] == gId) {
+          return {...item, 'status': 'Resolved'};
+        }
+        return item;
+      }).toList();
+    });
+
+    _fetchGrievances();
   }
 
   List<dynamic> _getMyComplaints() {
@@ -606,6 +716,7 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
         myComplaints: myComplaints,
         onClearHistory: _clearLocalHistory,
         onGrievanceSubmitted: _handleGrievanceSubmitted,
+        onResolveGrievance: _resolveGrievance,
         serverUrl: widget.serverUrl,
         useDirectCloud: widget.useDirectCloud,
         customGeminiKey: widget.customGeminiKey,
@@ -634,6 +745,7 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
         customGeminiKey: widget.customGeminiKey,
         allGrievances: mergedGrievances,
         onGrievancesFetched: _fetchGrievances,
+        onResolveGrievance: _resolveGrievance,
       );
     }
 
@@ -684,6 +796,7 @@ class CitizenPortalContent extends StatefulWidget {
   final List<dynamic> myComplaints;
   final VoidCallback onClearHistory;
   final void Function(String, dynamic) onGrievanceSubmitted;
+  final Future<void> Function(String) onResolveGrievance;
   final String serverUrl;
   final bool useDirectCloud;
   final String customGeminiKey;
@@ -698,6 +811,7 @@ class CitizenPortalContent extends StatefulWidget {
     required this.myComplaints,
     required this.onClearHistory,
     required this.onGrievanceSubmitted,
+    required this.onResolveGrievance,
     required this.serverUrl,
     required this.useDirectCloud,
     required this.customGeminiKey,
@@ -801,6 +915,7 @@ class _CitizenPortalContentState extends State<CitizenPortalContent> {
       lang: widget.lang,
       myComplaints: widget.myComplaints,
       onClearHistory: widget.onClearHistory,
+      onResolveGrievance: widget.onResolveGrievance,
     );
 
     return SingleChildScrollView(
@@ -963,8 +1078,9 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
       final ImagePicker picker = ImagePicker();
       final XFile? pickedFile = await picker.pickImage(
         source: source,
-        imageQuality: 70,   // compress to reduce payload size
-        maxWidth: 1280,
+        imageQuality: 20,   // aggressive compression for instant base64 uploads
+        maxWidth: 480,
+        maxHeight: 480,
       );
 
       if (pickedFile == null) return; // user cancelled
@@ -981,21 +1097,11 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Photo attached: $fileName'),
-            backgroundColor: Colors.green.shade700,
-          ),
-        );
+        showSubtleToast(context, 'Photo attached: $fileName');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not attach photo. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showSubtleToast(context, 'Could not attach photo. Try again.', isError: true);
       }
     }
   }
@@ -1137,7 +1243,7 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
         Uri.parse('${widget.serverUrl}/api/send-otp'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'contact': phoneText}),
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         expectedOtp = jsonDecode(res.body)['otp']?.toString() ?? "1234";
       }
@@ -1185,9 +1291,7 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
               if (val == expectedOtp || val == "1234") {
                 Navigator.pop(context, true);
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid verification code entered.'), backgroundColor: Colors.red),
-                );
+                showSubtleToast(context, 'Invalid verification code.', isError: true);
               }
             }
 
@@ -1280,7 +1384,13 @@ ${_latitude != null ? "Prioritize and use these exact coordinates: latitude $_la
 
 Generate a structured JSON report.
 Required keys:
-- isGenuine: Boolean. Set to true if complaint is a genuine civic issue (trash, water logging, potholes, sewage, street lights, utility, public infrastructure). Set to false if private/personal (lost keys, neighbor fight, flat tire).
+STRICT COMPLAINT VALIDATION GUARDRAILS:
+1. MP-SOLVABLE ONLY: Only accept grievances that can be addressed by a Member of Parliament (MP) command center or municipal/state civic departments (e.g. road infrastructure, public sanitation, solid waste, water logging/drainage, street lights, utility support).
+2. REJECT EMERGENCY/TIME-SENSITIVE: Set isGenuine = false for highly time-sensitive emergency requests (e.g., calling an ambulance, fire, active crime/police assistance). Tell them to dial 112/108.
+3. REJECT NONSENSE/PRIVATE/HYPERLOCAL: Set isGenuine = false for nonsense, personal, or private requests (e.g., "I can't get married", "unable to sleep", "can't sleep", "insomnia", "neend nahi aa rahi", "lost keys", "flat tire", "neighbor's music is loud", "lost dog", "need personal loan").
+4. PHOTO ALIGNMENT SHIELD: If an image/photo is attached, inspect it carefully. The photo MUST visually match and depict the civic grievance described (e.g. if text is about potholes, photo must show road damage/pothole. If text is about garbage, photo must show waste/trash). If the photo is completely blank, black, a random selfie, spam, or depicts an entirely different category (e.g. a photo of garbage when the text reports water logging), you MUST set isGenuine to false and set rejectionReason to "Rejection: Attached photo does not match or depict the reported civic issue."
+
+- isGenuine: Boolean. Set to true ONLY if the complaint is a genuine, specific civic/municipal issue that fits all validation rules above. Otherwise, set to false.
 - rejectionReason: String. If isGenuine is false, provide a polite explanation. Otherwise, "".
 - summary: 1-sentence action item summary.
 - category: E.g. "Solid Waste Management", "Water Logging & Drainage", "Road Infrastructure", "Street Lights".
@@ -1324,6 +1434,54 @@ Required keys:
         } catch (_) {
           // Rule-based fallback if cloud Gemini is unreachable
           final cleanDesc = descriptionText.toLowerCase();
+          
+          bool isSpam = cleanDesc.length < 12 ||
+              cleanDesc.contains("hello") ||
+              cleanDesc.contains("test") ||
+              cleanDesc.contains("testing") ||
+              cleanDesc.contains("asdf") ||
+              cleanDesc.contains("123");
+              
+          bool isNonsenseOrPrivate = cleanDesc.contains("sleep") ||
+              cleanDesc.contains("slepe") ||
+              cleanDesc.contains("neend") ||
+              cleanDesc.contains("so nahi") ||
+              cleanDesc.contains("insomnia") ||
+              cleanDesc.contains("marry") ||
+              cleanDesc.contains("marriage") ||
+              cleanDesc.contains("shaadi") ||
+              cleanDesc.contains("wedding") ||
+              cleanDesc.contains("keys") ||
+              cleanDesc.contains("chabi") ||
+              cleanDesc.contains("dog") ||
+              cleanDesc.contains("pet") ||
+              cleanDesc.contains("cat") ||
+              cleanDesc.contains("puppy") ||
+              cleanDesc.contains("fight") ||
+              cleanDesc.contains("love") ||
+              cleanDesc.contains("friend") ||
+              cleanDesc.contains("loan") ||
+              cleanDesc.contains("money") ||
+              cleanDesc.contains("tire") ||
+              cleanDesc.contains("puncture");
+
+          bool isEmergency = cleanDesc.contains("ambulance") ||
+              cleanDesc.contains("hospital emergency") ||
+              cleanDesc.contains("accident") ||
+              cleanDesc.contains("police") ||
+              cleanDesc.contains("crime") ||
+              cleanDesc.contains("fire");
+
+          bool isGenuine = !isSpam && !isNonsenseOrPrivate && !isEmergency;
+          String rejectionReason = "";
+          if (isSpam) {
+            rejectionReason = "The grievance description is too short, vague, or contains test words.";
+          } else if (isNonsenseOrPrivate) {
+            rejectionReason = "Rejection: Hyperlocal, personal, or private requests (such as sleep issues, marriage, lost items, or pets) cannot be resolved by the MP Command Center.";
+          } else if (isEmergency) {
+            rejectionReason = "Rejection: Time-sensitive emergency requests (medical/crime/fire) cannot be handled here. Please dial 112 or 108 immediately.";
+          }
+
           final category = cleanDesc.contains("water") || cleanDesc.contains("drain") || cleanDesc.contains("पानी")
               ? "Water Logging & Drainage"
               : cleanDesc.contains("road") || cleanDesc.contains("pothole") || cleanDesc.contains("सड़क") || cleanDesc.contains("गड्ढा")
@@ -1331,8 +1489,8 @@ Required keys:
                   : "Solid Waste Management";
           
           aiAnalysis = {
-            'isGenuine': true,
-            'rejectionReason': '',
+            'isGenuine': isGenuine,
+            'rejectionReason': rejectionReason,
             'summary': descriptionText.length > 50 ? '${descriptionText.substring(0, 50)}...' : descriptionText,
             'category': category,
             'severity': cleanDesc.contains("urgent") || cleanDesc.contains("danger") || cleanDesc.contains("खतरा") ? "High" : "Medium",
@@ -1409,7 +1567,7 @@ Required keys:
       if (widget.useDirectCloud) {
         try {
           final databaseUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances';
-          final getRes = await http.get(Uri.parse(databaseUrl)).timeout(const Duration(seconds: 4));
+          final getRes = await http.get(Uri.parse(databaseUrl)).timeout(const Duration(seconds: 15));
           if (getRes.statusCode == 200) {
             final docs = jsonDecode(getRes.body)['documents'] ?? [];
             activeGrievances = docs.map((doc) => _mapFirestoreDoc(doc)).toList();
@@ -1417,7 +1575,7 @@ Required keys:
         } catch (_) {}
       } else {
         try {
-          final fetchRes = await http.get(Uri.parse('${widget.serverUrl}/api/grievances')).timeout(const Duration(seconds: 4));
+          final fetchRes = await http.get(Uri.parse('${widget.serverUrl}/api/grievances')).timeout(const Duration(seconds: 15));
           if (fetchRes.statusCode == 200) {
             activeGrievances = jsonDecode(fetchRes.body)['grievances'] ?? [];
           }
@@ -1484,7 +1642,7 @@ Required keys:
               Uri.parse(patchUrl),
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode(updatePayload),
-            ).timeout(const Duration(seconds: 4));
+            ).timeout(const Duration(seconds: 15));
             if (patchRes.statusCode != 200) {
               throw Exception("Firestore patch status: ${patchRes.statusCode}");
             }
@@ -1501,7 +1659,7 @@ Required keys:
                 'trafficCount': currentTraffic + 1,
                 'reportersList': updatedReporters,
               }),
-            ).timeout(const Duration(seconds: 4));
+            ).timeout(const Duration(seconds: 15));
             if (updateRes.statusCode != 200) {
               throw Exception("Proxy consolidate status: ${updateRes.statusCode}");
             }
@@ -1555,7 +1713,7 @@ Required keys:
               Uri.parse(createUrl),
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode(createPayload),
-            ).timeout(const Duration(seconds: 4));
+            ).timeout(const Duration(seconds: 15));
             if (postRes.statusCode == 200) {
               final resPath = jsonDecode(postRes.body)['name'] as String;
               finalId = resPath.split('/').last;
@@ -1572,7 +1730,7 @@ Required keys:
               Uri.parse('${widget.serverUrl}/api/create-grievance'),
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode(finalGrievanceDoc),
-            ).timeout(const Duration(seconds: 4));
+            ).timeout(const Duration(seconds: 15));
             if (createRes.statusCode != 200) {
               throw Exception("Proxy status: ${createRes.statusCode}");
             }
@@ -1599,26 +1757,24 @@ Required keys:
         _longitude = null;
       });
 
-      // Send WhatsApp / SMS confirmation to the citizen
+      // Send WhatsApp / SMS confirmation to the citizen (using pre-cleared local text values)
       _sendConfirmationMessage(
-        phone: _phoneController.text.trim(),
-        name: _nameController.text.trim(),
+        phone: phoneText,
+        name: nameText,
         ticketId: finalId,
         category: finalGrievanceDoc['category'] ?? 'General',
         location: finalGrievanceDoc['cleanLocation'] ?? 'Delhi NCR',
         urgency: finalGrievanceDoc['urgency'] ?? 'Medium',
         dept: finalGrievanceDoc['suggested_department'] ?? 'MCD',
+        lat: finalGrievanceDoc['latitude'] ?? 0.0,
+        lng: finalGrievanceDoc['longitude'] ?? 0.0,
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.t('successSubmit')), backgroundColor: Colors.green),
-        );
+        showSubtleToast(context, widget.t('successSubmit'));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll("Exception: ", "")), backgroundColor: Colors.red),
-      );
+      showSubtleToast(context, e.toString().replaceAll("Exception: ", ""), isError: true);
     } finally {
       setState(() => _isAnalyzing = false);
       _generateCaptcha();
@@ -1634,36 +1790,59 @@ Required keys:
     required String location,
     required String urgency,
     required String dept,
+    required double lat,
+    required double lng,
   }) async {
-    final shortId = '#G-${ticketId.substring(0, 6).toUpperCase()}';
+    final shortId = ticketId.length >= 6 
+        ? '#G-${ticketId.substring(0, 6).toUpperCase()}' 
+        : '#G-${ticketId.toUpperCase()}';
     final now = DateTime.now();
     final timeStr = '${now.day}/${now.month}/${now.year} at ${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}';
+
+    // Format location properly with Lat/Lng and preserve Offline suffix
+    String locationText = location;
+    if (lat != 0.0 && lng != 0.0) {
+      if (locationText.contains(" (Offline Mode)")) {
+        final clean = locationText.replaceAll(" (Offline Mode)", "");
+        locationText = "$clean (Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}) (Offline Mode)";
+      } else {
+        locationText = "$location (Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)})";
+      }
+    }
 
     final message =
         '✅ Dear $name, your grievance has been successfully registered with the MP Command Center.\n\n'
         '📌 Ticket ID: $shortId\n'
         '📅 Submitted: $timeStr\n'
-        '📌 Location: $location\n'
+        '📌 Location: $locationText\n'
         '🚨 Category: $category\n'
         '⚠️ Urgency: $urgency\n'
         '🏢 Assigned to: $dept\n\n'
         'Your complaint is now in the MP Priority Backlog. You will be notified once it is resolved. Thank you for reporting!';
 
-    final encodedMsg = Uri.encodeComponent(message);
-    // Clean phone to 10 digits, add India country code
     final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-    final internationalPhone = cleanPhone.length == 10 ? '91$cleanPhone' : cleanPhone;
 
-    // Try WhatsApp first
-    final waUrl = Uri.parse('https://wa.me/$internationalPhone?text=$encodedMsg');
-    if (await canLaunchUrl(waUrl)) {
-      await launchUrl(waUrl, mode: LaunchMode.externalApplication);
-    } else {
-      // Fallback: open native SMS
-      final smsUrl = Uri.parse('sms:$cleanPhone?body=$encodedMsg');
-      if (await canLaunchUrl(smsUrl)) {
-        await launchUrl(smsUrl);
-      }
+    // Dispatches confirmation SMS directly from the server to the user's phone via Telemetry
+    try {
+      final telemetryUrl = widget.serverUrl + '/api/telemetry';
+      await http.post(
+        Uri.parse(telemetryUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'event': 'sms_notification',
+          'properties': {
+            'to': cleanPhone,
+            'message': message,
+            'grievanceId': ticketId,
+            'type': 'registration_confirmation',
+            'name': name,
+          },
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      ).timeout(const Duration(seconds: 15));
+      debugPrint("Direct confirmation SMS dispatched via Telemetry API link.");
+    } catch (e) {
+      debugPrint("Telemetry SMS dispatch failed: $e");
     }
   }
 
@@ -1698,9 +1877,7 @@ Required keys:
 
     final userAns = int.tryParse(_captchaController.text.trim()) ?? -1;
     if (userAns != _captchaAnswer) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.t('captchaError')), backgroundColor: Colors.red),
-      );
+      showSubtleToast(context, widget.t('captchaError'), isError: true);
       _generateCaptcha();
       return;
     }
@@ -2077,38 +2254,71 @@ Required keys:
 
   Widget _buildReceiptBox() {
     final rc = _aiReceipt!;
-    final isResolved = rc['status'] == 'Resolved';
+    final isHi = widget.lang == 'hi';
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.blue.shade200),
+        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0F172A) : const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          )
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.verified_rounded, size: 14, color: Colors.blue.shade800),
-              const SizedBox(width: 6),
-              Text(
-                widget.t('successTitle').toUpperCase(),
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blue.shade900),
+              const Icon(Icons.check_circle_rounded, size: 16, color: Colors.green),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isHi ? 'शिकायत सफलतापूर्वक दर्ज की गई!' : 'Grievance Registered Successfully!',
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.green),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 14, color: Colors.grey),
+                onPressed: () => setState(() => _aiReceipt = null),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(widget.t('successSub'), style: const TextStyle(fontSize: 8.5, color: Colors.black87, height: 1.25)),
-          const Divider(height: 12),
-          _receiptRow('ID', '#G-${rc['id'].toString().substring(0,6).toUpperCase()}'),
-          _receiptRow(widget.t('lblAssignedDept'), rc['suggested_department'] ?? 'MCD'),
-          _receiptRow(widget.t('lblExtractedLandmark'), rc['cleanLocation'] ?? 'Delhi NCR'),
-          _receiptRow(widget.t('lblCategory'), rc['category'] ?? 'Solid Waste'),
-          _receiptRow(widget.t('lblUrgency'), rc['urgency'] ?? 'Medium'),
-          _receiptRow('Detected Sentiment', rc['sentiment'] ?? 'Neutral'),
-          _receiptRow('Systemic Need', rc['recurringNeed'] ?? 'N/A'),
+          const SizedBox(height: 6),
+          Text(
+            isHi
+                ? 'आपकी शिकायत प्राथमिकता बैकलॉग में जोड़ दी गई है। पुष्टि एसएमएस भेजा गया है।'
+                : 'Your complaint has been logged in the Priority Backlog. Confirmation SMS dispatched.',
+            style: const TextStyle(fontSize: 8.5, color: Colors.grey),
+          ),
+          const Divider(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'TICKET ID: #G-${rc['id'].toString().substring(0, 6).toUpperCase()}',
+                style: const TextStyle(fontSize: 9, fontFamily: 'monospace', fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  (rc['suggested_department'] ?? rc['assignedBody'] ?? 'MCD').toString().toUpperCase(),
+                  style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.green),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2135,6 +2345,7 @@ class TrackerHistoryWidget extends StatelessWidget {
   final String lang;
   final List<dynamic> myComplaints;
   final VoidCallback onClearHistory;
+  final Future<void> Function(String) onResolveGrievance;
 
   const TrackerHistoryWidget({
     super.key,
@@ -2142,6 +2353,7 @@ class TrackerHistoryWidget extends StatelessWidget {
     required this.lang,
     required this.myComplaints,
     required this.onClearHistory,
+    required this.onResolveGrievance,
   });
 
   @override
@@ -2270,7 +2482,7 @@ class TrackerHistoryWidget extends StatelessWidget {
                           style: const TextStyle(fontSize: 9.5, color: Colors.grey),
                         ),
                         const SizedBox(height: 6),
-                        Row(
+Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
@@ -2282,7 +2494,30 @@ class TrackerHistoryWidget extends StatelessWidget {
                               style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
                             )
                           ],
-                        )
+                        ),
+                        if (!isResolved) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton.icon(
+                                icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.green),
+                                label: Text(
+                                  lang == 'hi' ? 'समस्या हल हो गई है' : 'Mark as Resolved',
+                                  style: const TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold),
+                                ),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () {
+                                  onResolveGrievance(item['id']);
+                                },
+                              ),
+                            ],
+                          )
+                        ]
                       ],
                     ),
                   );
@@ -2303,6 +2538,7 @@ class MpAdminPortalContent extends StatefulWidget {
   final String customGeminiKey;
   final List<dynamic> allGrievances;
   final VoidCallback onGrievancesFetched;
+  final Future<void> Function(String) onResolveGrievance;
 
   const MpAdminPortalContent({
     super.key,
@@ -2313,6 +2549,7 @@ class MpAdminPortalContent extends StatefulWidget {
     required this.customGeminiKey,
     required this.allGrievances,
     required this.onGrievancesFetched,
+    required this.onResolveGrievance,
   });
 
   @override
@@ -2322,6 +2559,11 @@ class MpAdminPortalContent extends StatefulWidget {
 class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
   bool _isAuthenticated = false;
   String _activeSubTab = 'hub'; // hub, planner
+  double _budgetRoads = 1.5;
+  double _budgetWater = 2.0;
+  double _budgetWaste = 1.5;
+  bool _isSimulatingBudget = false;
+  Map<String, dynamic>? _budgetSimulationResult;
   String _selectedSector = 'All';
   String _dateRange = 'ALL TIME'; // ALL TIME, WEEKLY, MONTHLY, YEARLY
 
@@ -2583,18 +2825,17 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
         );
       } catch (_) {}
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Status updated to $newStatus'), backgroundColor: Colors.green),
-      );
+      showSubtleToast(context, 'Status updated to $newStatus');
 
+      if (newStatus == 'Resolved') {
+        await widget.onResolveGrievance(gId);
+      }
       setState(() {
         _selectedGrievance = null;
       });
       widget.onGrievancesFetched();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-      );
+      showSubtleToast(context, e.toString(), isError: true);
     }
   }
 
@@ -2857,9 +3098,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-      );
+      showSubtleToast(context, e.toString(), isError: true);
     } finally {
       setState(() => _recommendationsRunning = false);
     }
@@ -2977,6 +3216,10 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
 
     Widget smartPlannerContent = Column(
       children: [
+        _buildConstituencyKPIAnalyticsCard(),
+        const SizedBox(height: 12),
+        _buildConstituencyBudgetSimulator(),
+        const SizedBox(height: 12),
         _buildDssComparisonCard(),
         const SizedBox(height: 12),
         _buildBudgetScanCard(),
@@ -2994,6 +3237,333 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
         ],
       ),
     );
+  }
+
+  Widget _buildConstituencyKPIAnalyticsCard() {
+    final all = widget.allGrievances;
+    final total = all.length;
+    final open = all.where((g) => g['status'] == 'Open').length;
+    final resolved = all.where((g) => g['status'] == 'Resolved').length;
+    final closed = all.where((g) => g['status'] == 'Closed').length;
+
+    final double resolutionRate = total > 0 ? ((resolved + closed) / total) * 100 : 0.0;
+    
+    // SLA Resolution metric: High-Urgency tickets resolved index
+    final highUrgencyTotal = all.where((g) => g['urgency'] == 'High').length;
+    final highUrgencyClosed = all.where((g) => g['urgency'] == 'High' && (g['status'] == 'Resolved' || g['status'] == 'Closed')).length;
+    final double slaIndex = highUrgencyTotal > 0 ? (highUrgencyClosed / highUrgencyTotal) * 100 : 100.0;
+
+    return Card(
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.blueGrey.withOpacity(0.1))),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.analytics_outlined, size: 16, color: Colors.indigo),
+                SizedBox(width: 6),
+                Text('CONSTITUENCY SLA & PERFORMANCE INDEX', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Real-time SLA resolution tracking and response statistics.',
+              style: TextStyle(fontSize: 8.5, color: Colors.grey),
+            ),
+            const Divider(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _kpiStatTile(
+                    label: 'TOTAL BACKLOG',
+                    value: '$total',
+                    color: Colors.indigo,
+                    icon: Icons.assignment_outlined,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _kpiStatTile(
+                    label: 'ACTIVE OPEN',
+                    value: '$open',
+                    color: Colors.amber.shade800,
+                    icon: Icons.pending_actions_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _kpiStatTile(
+                    label: 'RESOLUTION RATE',
+                    value: '${resolutionRate.toStringAsFixed(1)}%',
+                    color: Colors.green.shade700,
+                    icon: Icons.check_circle_outline,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _kpiStatTile(
+                    label: 'HIGH-PRIORITY SLA',
+                    value: '${slaIndex.toStringAsFixed(1)}%',
+                    color: Colors.red.shade700,
+                    icon: Icons.speed_outlined,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kpiStatTile({
+    required String label,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.15)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 7.5, color: Colors.grey, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 2),
+                Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
+  Widget _buildConstituencyBudgetSimulator() {
+    final double totalAllocated = _budgetRoads + _budgetWater + _budgetWaste;
+    final bool hasOverrun = totalAllocated > 5.0;
+
+    return Card(
+      color: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: Colors.blueGrey.withOpacity(0.1))),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.account_balance_wallet_outlined, size: 16, color: Colors.teal),
+                const SizedBox(width: 6),
+                Text(
+                  widget.lang == 'hi' ? 'विकास निधि आवंटन सिम्युलेटर' : 'CONSTITUENCY DEVELOPMENT BUDGET SIMULATOR',
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.lang == 'hi'
+                  ? '₹5.0 करोड़ का वार्षिक बजट वितरित करें और संभावित लोक संतुष्टि का विश्लेषण करें।'
+                  : 'Distribute ₹5.0 Crore development grant and simulate expected public satisfaction.',
+              style: const TextStyle(fontSize: 8.5, color: Colors.grey),
+            ),
+            const Divider(height: 12),
+
+            _budgetSliderRow('Road Repair / Potholes', _budgetRoads, Colors.blue, (val) {
+              setState(() => _budgetRoads = val);
+            }),
+            _budgetSliderRow('Water Logging / Drainage', _budgetWater, Colors.indigo, (val) {
+              setState(() => _budgetWater = val);
+            }),
+            _budgetSliderRow('Solid Waste Management', _budgetWaste, Colors.teal, (val) {
+              setState(() => _budgetWaste = val);
+            }),
+
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Total Allocated: ₹' + totalAllocated.toStringAsFixed(1) + ' Cr / ₹5.0 Cr',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: hasOverrun ? Colors.red : Colors.green,
+                  ),
+                ),
+                if (hasOverrun)
+                  const Text('⚠️ BUDGET OVERRUN', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.red)),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              height: 38,
+              child: ElevatedButton.icon(
+                onPressed: _isSimulatingBudget ? null : _simulateBudgetAllocation,
+                icon: const Icon(Icons.speed_rounded, size: 14),
+                label: const Text('SIMULATE OUTCOME & ROI', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+
+            if (_isSimulatingBudget) ...[
+              const SizedBox(height: 10),
+              const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.teal))),
+            ],
+
+            if (_budgetSimulationResult != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('SIMULATION PROJECTION REPORT:', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.teal)),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _projectionStat('Satisfaction Index', _budgetSimulationResult!['satisfaction'].toString() + '%'),
+                        _projectionStat('Tickets Resolved', _budgetSimulationResult!['resolved'].toString()),
+                        _projectionStat('Cost Efficiency / Cr', _budgetSimulationResult!['roi'].toString()),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _budgetSimulationResult!['comments'],
+                      style: const TextStyle(fontSize: 9, height: 1.35, fontWeight: FontWeight.w500),
+                    )
+                  ],
+                ),
+              )
+            ]
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _budgetSliderRow(String label, double value, Color color, ValueChanged<double> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(label, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            flex: 5,
+            child: Slider(
+              value: value,
+              min: 0.0,
+              max: 5.0,
+              divisions: 50,
+              activeColor: color,
+              onChanged: onChanged,
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: Text(
+              '₹' + value.toStringAsFixed(1) + ' Cr',
+              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: color),
+              textAlign: TextAlign.end,
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _projectionStat(String label, String val) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 7.5, color: Colors.grey)),
+        const SizedBox(height: 2),
+        Text(val, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.teal)),
+      ],
+    );
+  }
+
+  void _simulateBudgetAllocation() {
+    setState(() {
+      _isSimulatingBudget = true;
+    });
+    
+    final totalBudget = _budgetRoads + _budgetWater + _budgetWaste;
+    
+    int roadsCount = widget.allGrievances.where((g) => g['status'] == 'Open' && g['category'] == 'Road Infrastructure').length;
+    int waterCount = widget.allGrievances.where((g) => g['status'] == 'Open' && g['category'] == 'Water Logging & Drainage').length;
+    int wasteCount = widget.allGrievances.where((g) => g['status'] == 'Open' && g['category'] == 'Solid Waste Management').length;
+    
+    double roadsFactor = roadsCount > 0 ? (_budgetRoads / (roadsCount * 0.2)) : 1.0;
+    double waterFactor = waterCount > 0 ? (_budgetWater / (waterCount * 0.3)) : 1.0;
+    double wasteFactor = wasteCount > 0 ? (_budgetWaste / (wasteCount * 0.15)) : 1.0;
+    
+    if (roadsFactor > 1.0) roadsFactor = 1.0;
+    if (waterFactor > 1.0) waterFactor = 1.0;
+    if (wasteFactor > 1.0) wasteFactor = 1.0;
+    
+    final overallSatisfaction = ((roadsFactor * 0.35 + waterFactor * 0.4 + wasteFactor * 0.25) * 100).clamp(0, 100).toInt();
+    final grievancesResolved = ((roadsFactor * roadsCount) + (waterFactor * waterCount) + (wasteFactor * wasteCount)).toInt();
+    
+    String comments = "";
+    if (totalBudget > 5.0) {
+      comments = "⚠️ BUDGET OVERRUN: You allocated ₹" + totalBudget.toStringAsFixed(1) + " Cr which exceeds the ₹5.0 Cr constituency grant. Please reduce allocation to optimize ROI.";
+    } else {
+      if (overallSatisfaction >= 85) {
+        comments = "🏆 EXCELLENT ALLOCATION! You addressed Potholes, Water Logging, and Solid Waste in optimal proportions. This budget maximizes public satisfaction and resolves " + grievancesResolved.toString() + " complaints.";
+      } else if (_budgetWater < 1.5 && waterCount > 2) {
+        comments = "⚠️ CRITICAL DEFICIT: Water Logging complaints are high, but you allocated less than ₹1.5 Cr for Drainage. We recommend redirecting funds from other areas to prevent monsoon distress.";
+      } else if (_budgetRoads < 1.0 && roadsCount > 2) {
+        comments = "⚠️ ROAD DEFICIT: Road infrastructure complaints are high, but you allocated less than ₹1.0 Cr for Potholes. Citizens will face mobility challenges.";
+      } else {
+        comments = "👍 STABLE PLAN: Solid fund distribution. Satisfaction is at " + overallSatisfaction.toString() + "%. Adjust sliders to further balance high-urgency areas.";
+      }
+    }
+    
+    Future.delayed(const Duration(milliseconds: 600), () {
+      setState(() {
+        _isSimulatingBudget = false;
+        _budgetSimulationResult = {
+          'satisfaction': overallSatisfaction,
+          'resolved': grievancesResolved,
+          'roi': (overallSatisfaction / (totalBudget > 0 ? totalBudget : 1.0)).toStringAsFixed(1),
+          'comments': comments
+        };
+      });
+    });
   }
 
   Widget _buildDssComparisonCard() {
@@ -3423,6 +3993,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
             final repeats = g['repeatCount'] ?? 1;
             final isSelected = _selectedGrievance?['id'] == g['id'];
             final isResolved = g['status'] == 'Resolved';
+    final isClosed = g['status'] == 'Closed';
 
             final urgency = g['urgency'] ?? 'Medium';
             final Color itemBorderColor = isSelected 
@@ -3482,6 +4053,46 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                                 g['category'] ?? '',
                                 style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold),
                               ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: g['status'] == 'Closed'
+                                      ? Colors.blueGrey.shade100
+                                      : (g['status'] == 'Resolved' ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7)),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  (g['status'] ?? 'Open').toString().toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 7.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: g['status'] == 'Closed'
+                                        ? Colors.blueGrey.shade700
+                                        : (g['status'] == 'Resolved' ? const Color(0xFF065F46) : const Color(0xFF92400E)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: g['status'] == 'Closed'
+                                      ? Colors.blueGrey.shade100
+                                      : (g['status'] == 'Resolved' ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7)),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  (g['status'] ?? 'Open').toString().toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 7.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: g['status'] == 'Closed'
+                                        ? Colors.blueGrey.shade700
+                                        : (g['status'] == 'Resolved' ? const Color(0xFF065F46) : const Color(0xFF92400E)),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 2),
@@ -3525,10 +4136,98 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
     );
   }
 
+  void _showWorkOrderDialog(Map<String, dynamic> g) {
+    final now = DateTime.now();
+    final dateStr = "${now.day}/${now.month}/${now.year}";
+    final dept = g['suggested_department'] ?? g['assignedBody'] ?? 'MCD';
+    final location = g['cleanLocation'] ?? 'Delhi NCR';
+    final ticketId = g['id'].toString().substring(0, 6).toUpperCase();
+    final category = g['category'] ?? 'Civic Issue';
+    final severity = g['severity'] ?? 'Medium';
+    final desc = g['description'] ?? '';
+
+    final String officialLetter = 
+        "OFFICIAL REPRESENTATION\n"
+        "OFFICE OF THE MEMBER OF PARLIAMENT (MP COMMAND CENTER)\n"
+        "Date: $dateStr\n"
+        "To,\n"
+        "The Commissioner / Chief Engineer,\n"
+        "Department of $dept, Delhi NCR\n\n"
+        "Subject: Urgent Action Representation - Grievance ID #G-$ticketId\n\n"
+        "Respected Sir/Madam,\n"
+        "This is to bring to your immediate notice a public grievance registered at the MP Command Center:\n\n"
+        "  • Ticket ID: #G-$ticketId\n"
+        "  • Category: $category (Severity: $severity)\n"
+        "  • Landmark/Location: $location\n"
+        "  • Description: $desc\n\n"
+        "This issue directly affects the local constituency population and requires immediate inspection and resolution under your department's jurisdiction.\n\n"
+        "Please direct the local field inspector to initiate repair works on priority and update the status to this office.\n\n"
+        "Warm regards,\n"
+        "Office of the Member of Parliament\n"
+        "Delhi NCR Constituency Command Center";
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.gavel_rounded, color: Colors.indigo),
+              SizedBox(width: 8),
+              Text('Official Work Order', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Copy and share this representation with department commissioners or engineers:',
+                  style: TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  color: Theme.of(ctx).brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                  child: SelectableText(
+                    officialLetter,
+                    style: const TextStyle(fontSize: 10, fontFamily: 'monospace', height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                
+                  Clipboard.setData(ClipboardData(text: officialLetter));
+                  showSubtleToast(context, 'Work order copied!');
+                  Navigator.pop(ctx);
+                
+              },
+              icon: const Icon(Icons.copy, size: 14),
+              label: const Text('Copy Text', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+            )
+          ],
+        );
+      },
+    );
+  }
+
+
+
   Widget _buildSelectedGrievanceConsole() {
     if (_selectedGrievance == null) return Container();
     final g = _selectedGrievance!;
     final isResolved = g['status'] == 'Resolved';
+    final isClosed = g['status'] == 'Closed';
 
     // Simulated Verification Parameters
     final String reportTime = g['createdAt'] != null ? g['createdAt'].toString().substring(11, 16) : "08:30";
@@ -3562,10 +4261,69 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
               'Category: ${g['category']} | Status: ${g['status']}', 
               style: const TextStyle(fontSize: 9.5, color: Colors.blueGrey, fontWeight: FontWeight.bold)
             ),
+            if (g['imageUrl'] != null && g['imageUrl'].toString().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text('ATTACHED PHOTOGRAPH:', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.indigo)),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: double.infinity,
+                  height: 150,
+                  color: Colors.black12,
+                  child: Builder(
+                    builder: (context) {
+                      try {
+                        final cleanBase64 = _sanitizeBase64(g['imageUrl'].toString());
+                        return Image.memory(
+                          base64Decode(cleanBase64),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey, size: 30));
+                          },
+                        );
+                      } catch (e) {
+                        return const Center(child: Icon(Icons.broken_image_outlined, color: Colors.grey, size: 30));
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
               'Description: "${g['description']}"', 
               style: TextStyle(fontSize: _isEasyMode ? 11 : 9.5, fontStyle: FontStyle.italic)
+            ),
+            const SizedBox(height: 8),
+            // Secondary Utility: Official Work Order Generator
+            SizedBox(
+              width: double.infinity,
+              height: 32,
+              child: OutlinedButton.icon(
+                onPressed: () => _showWorkOrderDialog(g),
+                icon: const Icon(Icons.assignment_turned_in_outlined, size: 13, color: Colors.indigo),
+                label: const Text('📋 GENERATE OFFICIAL WORK ORDER', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.indigo),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Secondary Utility: Official Work Order Generator
+            SizedBox(
+              width: double.infinity,
+              height: 32,
+              child: OutlinedButton.icon(
+                onPressed: () => _showWorkOrderDialog(g),
+                icon: const Icon(Icons.assignment_turned_in_outlined, size: 13, color: Colors.indigo),
+                label: const Text('📋 GENERATE OFFICIAL WORK ORDER', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.indigo),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+              ),
             ),
             const SizedBox(height: 10),
 
@@ -3591,27 +4349,46 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
             ),
             const SizedBox(height: 12),
 
-            // Large Actions for MP
+            // Large Actions for MP (Resolve, Reopen, and Close options)
             Row(
               children: [
-                Expanded(
-                  child: SizedBox(
-                    height: _isEasyMode ? 56 : 38,
-                    child: ElevatedButton(
-                      onPressed: () => _updateGrievanceStatus('Resolved', 'Thank you. The reported issue has been successfully resolved.'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: Text(
-                        widget.lang == 'hi' ? '✅ हल किया (RESOLVE)' : '✅ RESOLVE TICKET',
-                        style: TextStyle(fontSize: _isEasyMode ? 12 : 9.5, fontWeight: FontWeight.bold),
+                if (!isResolved && !isClosed) ...[
+                  Expanded(
+                    child: SizedBox(
+                      height: _isEasyMode ? 56 : 38,
+                      child: ElevatedButton(
+                        onPressed: () => _updateGrievanceStatus('Resolved', 'Thank you. The reported issue has been successfully resolved.'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade700,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text(
+                          widget.lang == 'hi' ? '✅ हल किया (RESOLVE)' : '✅ RESOLVE TICKET',
+                          style: TextStyle(fontSize: _isEasyMode ? 12 : 9.5, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
                 if (isResolved) ...[
+                  Expanded(
+                    child: SizedBox(
+                      height: _isEasyMode ? 56 : 38,
+                      child: ElevatedButton(
+                        onPressed: () => _updateGrievanceStatus('Closed', 'Thank you. The resolved ticket is now closed by command inspector.'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueGrey.shade800,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text(
+                          widget.lang == 'hi' ? '🔒 बंद करें (CLOSE)' : '🔒 CLOSE TICKET',
+                          style: TextStyle(fontSize: _isEasyMode ? 12 : 9.5, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
@@ -3629,8 +4406,27 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                         ),
                       ),
                     ),
-                  )
-                ]
+                  ),
+                ],
+                if (isClosed) ...[
+                  Expanded(
+                    child: SizedBox(
+                      height: _isEasyMode ? 56 : 38,
+                      child: ElevatedButton(
+                        onPressed: () => _updateGrievanceStatus('Open', 'Closed ticket reopened for verification.'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade700,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text(
+                          widget.lang == 'hi' ? '❌ दोबारा खोलें' : '❌ REOPEN TICKET',
+                          style: TextStyle(fontSize: _isEasyMode ? 12 : 9.5, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             )
           ],
@@ -3771,7 +4567,7 @@ class _SmsCenterSheetState extends State<SmsCenterSheet> {
 
   Future<void> _fetchLogs() async {
     try {
-      final res = await http.get(Uri.parse('${widget.serverUrl}/api/sms-logs')).timeout(const Duration(seconds: 4));
+      final res = await http.get(Uri.parse('${widget.serverUrl}/api/sms-logs')).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         setState(() {
           _smsLogs = jsonDecode(res.body)['logs'] ?? [];
@@ -3802,7 +4598,7 @@ class _SmsCenterSheetState extends State<SmsCenterSheet> {
           ),
           const Divider(height: 12),
           Expanded(
-            child: ListView(
+            child: ListView(physics: const ClampingScrollPhysics(), 
               children: [
                 SwitchListTile(
                   title: const Text('Direct Cloud (Firestore) Link', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
@@ -3852,7 +4648,7 @@ class _SmsCenterSheetState extends State<SmsCenterSheet> {
                   Container(
                     height: 100,
                     decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(6)),
-                    child: ListView.separated(
+                    child: ListView.separated(physics: const ClampingScrollPhysics(), 
                       itemCount: _smsLogs.length,
                       separatorBuilder: (ctx, i) => const Divider(height: 1),
                       itemBuilder: (ctx, i) {

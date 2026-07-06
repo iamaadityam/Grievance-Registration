@@ -549,31 +549,80 @@ app.post("/api/analyze-grievance", async (req, res) => {
       }
     }
 
-    // Fallback in case of missing key to avoid hard crash
+    // Fallback in case of missing key to avoid hard crash: run rule-based guardrail checks first
+    const cleanDesc = description.toLowerCase();
+    
+    const isSpam = cleanDesc.length < 12 ||
+        cleanDesc.includes("hello") ||
+        cleanDesc.includes("test") ||
+        cleanDesc.includes("testing") ||
+        cleanDesc.includes("asdf") ||
+        cleanDesc.includes("123");
+        
+    const isNonsenseOrPrivate = cleanDesc.includes("sleep") ||
+        cleanDesc.includes("slepe") ||
+        cleanDesc.includes("neend") ||
+        cleanDesc.includes("so nahi") ||
+        cleanDesc.includes("insomnia") ||
+        cleanDesc.includes("marry") ||
+        cleanDesc.includes("marriage") ||
+        cleanDesc.includes("shaadi") ||
+        cleanDesc.includes("wedding") ||
+        cleanDesc.includes("keys") ||
+        cleanDesc.includes("chabi") ||
+        cleanDesc.includes("dog") ||
+        cleanDesc.includes("pet") ||
+        cleanDesc.includes("cat") ||
+        cleanDesc.includes("puppy") ||
+        cleanDesc.includes("fight") ||
+        cleanDesc.includes("love") ||
+        cleanDesc.includes("friend") ||
+        cleanDesc.includes("loan") ||
+        cleanDesc.includes("money") ||
+        cleanDesc.includes("tire") ||
+        cleanDesc.includes("puncture");
+
+    const isEmergency = cleanDesc.includes("ambulance") ||
+        cleanDesc.includes("hospital emergency") ||
+        cleanDesc.includes("accident") ||
+        cleanDesc.includes("police") ||
+        cleanDesc.includes("crime") ||
+        cleanDesc.includes("fire");
+
+    const isGenuine = !isSpam && !isNonsenseOrPrivate && !isEmergency;
+    let rejectionReason = "";
+    if (isSpam) {
+      rejectionReason = "The grievance description is too short, vague, or contains test words.";
+    } else if (isNonsenseOrPrivate) {
+      rejectionReason = "Rejection: Hyperlocal, personal, or private requests (such as sleep issues, marriage, lost items, or pets) cannot be resolved by the MP Command Center.";
+    } else if (isEmergency) {
+      rejectionReason = "Rejection: Time-sensitive emergency requests (medical/crime/fire) cannot be handled here. Please dial 112 or 108 immediately.";
+    }
+
     return res.json({
-      isGenuine: true,
-      rejectionReason: "",
-      summary: "Citizen reported an issue: " + description.substring(0, 60) + "...",
-      category: description.toLowerCase().includes("water") || description.toLowerCase().includes("flood") 
+      isGenuine,
+      rejectionReason,
+      summary: isGenuine ? ("Citizen reported an issue: " + description.substring(0, 60) + "...") : "Rejected due to guardrail policy violation.",
+      category: isGenuine ? (description.toLowerCase().includes("water") || description.toLowerCase().includes("flood") 
         ? "Water Drainage" 
         : description.toLowerCase().includes("road") || description.toLowerCase().includes("hole")
         ? "Road Infrastructure"
-        : "Solid Waste",
-      severity: description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? "High" : "Medium",
-      urgency: description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? 9 : 5,
-      affected_people: "Local residents and commuters",
-      suggested_department: description.toLowerCase().includes("road") ? "PWD" : "MCD",
+        : "Solid Waste") : "Rejected",
+      severity: isGenuine ? (description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? "High" : "Medium") : "Low",
+      urgency: isGenuine ? (description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? 9 : 5) : 1,
+      affected_people: isGenuine ? "Local residents and commuters" : "None",
+      suggested_department: isGenuine ? (description.toLowerCase().includes("road") ? "PWD" : "MCD") : "None",
       confidence: 90,
-      keywords: ["reported", "issue", "citizen"],
-      cleanLocation: resolvedCleanLocation,
-      latitude: resolvedLatitude,
-      longitude: resolvedLongitude,
+      keywords: isGenuine ? ["reported", "issue", "citizen"] : ["rejected", "guardrail"],
+      cleanLocation: isGenuine ? resolvedCleanLocation : "N/A",
+      latitude: isGenuine ? resolvedLatitude : 28.6139,
+      longitude: isGenuine ? resolvedLongitude : 77.2090,
       detectedLanguage: fallbackLang,
       imageVerificationStatus: imageData ? "verified" : "not_attached",
       imageVerificationMessage: imageData ? "Attached photo matches description (Fallback verification bypassed)." : "No image uploaded.",
-      guardrailRelevanceScore: 1.0,
-      guardrailFlaggedReason: "NONE",
-      guardrailResolvedCategory: description.toLowerCase().includes("road") ? "Potholes" : description.toLowerCase().includes("water") ? "Water Logging" : "Garbage",
+      guardrailRelevanceScore: isGenuine ? 1.0 : 0.0,
+      guardrailFlaggedReason: isGenuine ? "NONE" : "IRRELEVANT_SERVICE_REQUEST",
+      guardrailResolvedCategory: isGenuine ? (description.toLowerCase().includes("road") ? "Potholes" : description.toLowerCase().includes("water") ? "Water Logging" : "Garbage") : "DEFLECTED",
       guardrailExecutiveSummary: description,
       warning: "Running in fallback mode. Please configure GEMINI_API_KEY in secrets."
     });
@@ -696,8 +745,13 @@ Citizen Complaint description to evaluate: "${description}"
     Then, analyze the description and generate a structured JSON report.
     
     STRICT COMPLAINT VALIDATION GUARDRAILS:
-    1. VAGUENESS: Deny any vague grievances. A grievance is considered vague if it lacks actionable physical detail, is extremely short, or only contains generic terms (e.g. "garbage here", "water logging is bad", "clean the road", "fix potholes" without further detail). In such cases, isGenuine must be set to false and rejectionReason must politely explain that the issue lacks detail.
-    2. LANDMARK REQUIREMENT: ${isHasGps ? `Since the user provided verified GPS coordinates, skip the strict landmark requirement rejection check. Set isGenuine to true.` : `The grievance MUST include an explicit, clear nearby landmark or physical point of interest (e.g., "near standard shop", "opposite milk booth", "behind block A gate", "beside pillar 55", "near sector park"). If no specific landmark or nearby indicator is present in the text description, set isGenuine to false and rejectionReason must politely inform them that a landmark is mandatory.`}
+    1. MP-SOLVABLE ONLY: Only accept grievances that can be resolved by a Member of Parliament (MP) command center or municipal/state civic departments (e.g. road infrastructure, public sanitation, solid waste, water logging/drainage, street lights, utility support).
+    2. REJECT EMERGENCY/TIME-SENSITIVE: Set isGenuine = false for highly time-sensitive emergency requests (e.g., calling an ambulance, fire, active crime/police assistance). Tell them to dial 112/108.
+    3. REJECT NONSENSE/PRIVATE/HYPERLOCAL: Set isGenuine = false for nonsense, personal, or private requests (e.g., "I can't get married", "unable to sleep", "can't sleep", "insomnia", "neend nahi aa rahi", "lost keys", "flat tire", "neighbor's music is loud", "lost dog", "need personal loan").
+    4. PHOTO ALIGNMENT SHIELD: If an image is attached to this grievance, inspect its visual content. The image MUST depict the reported civic issue. If the image is a black screen, blank, random selfie, spam, or completely unrelated to the text description (e.g., a photo of garbage when the text reports a pothole, or a pothole when they report a roadblock), you MUST set isGenuine to false and rejectionReason to "Rejection: Attached photo does not match or depict the reported civic issue."
+    4. PHOTO ALIGNMENT SHIELD: If an image is attached to this grievance, inspect its visual content. The image MUST depict the reported civic issue. If the image is a black screen, blank, random selfie, spam, or completely unrelated to the text description (e.g., a photo of garbage when the text reports a pothole, or a pothole when they report a roadblock), you MUST set isGenuine to false and rejectionReason to "Rejection: Attached photo does not match or depict the reported civic issue."
+    4. VAGUENESS: Deny any vague grievances. A grievance is considered vague if it lacks actionable physical detail, is extremely short, or only contains generic terms (e.g. "garbage here", "water logging is bad", "clean the road", "fix potholes" without further detail). In such cases, isGenuine must be set to false and rejectionReason must politely explain that the issue lacks detail.
+    5. LANDMARK REQUIREMENT: ${isHasGps ? `Since the user provided verified GPS coordinates, skip the strict landmark requirement rejection check. Set isGenuine to true.` : `The grievance MUST include an explicit, clear nearby landmark or physical point of interest (e.g., "near standard shop", "opposite milk booth", "behind block A gate", "beside pillar 55", "near sector park"). If no specific landmark or nearby indicator is present in the text description, set isGenuine to false and rejectionReason must politely inform them that a landmark is mandatory.`}
     3. LANGUAGE DETECTION: Automatically detect the language of the grievance description (e.g., English, Hindi, Hinglish, Punjabi, etc.) and save it in detectedLanguage.
     4. SPAM/TESTS: Deny gibberish, greetings, offensive words, and obvious test terms ("test", "hello", "asdf", "testing", "123").
     5. CROSS-MODAL VISION ALIGNMENT SHIELD: ${hasImage ? `An image is attached to this grievance. Look at the attached image carefully. Verify whether the visual content of the image actually matches and justifies the text description, category, and claims (e.g. if the category is 'Potholes' and they write about a huge hole, the image should actually show road damage, a hole, or tarmac issue. If description is about garbage, image should show waste/trash). If the image is completely unrelated, blank, spam, clean street, a random selfie, or severe mismatch, set imageVerificationStatus to 'mismatch' and explain the severe mismatch in imageVerificationMessage. Otherwise, if it matches and justifies the claims, set imageVerificationStatus to 'verified' and explain in imageVerificationMessage.` : `No image is attached. Set imageVerificationStatus to 'not_attached' and imageVerificationMessage to 'No image uploaded'.`}
@@ -741,7 +795,7 @@ Citizen Complaint description to evaluate: "${description}"
       model: "gemini-3.5-flash",
       contents,
       config: {
-        systemInstruction: "You are an expert AI municipal dispatcher and civic analyst for India. Your job is to analyze citizen grievances, strictly reject vague entries or those missing landmarks (unless GPS is verified), detect the input language, perform cross-modal image validation, detect citizen sentiment, and suggest coordinates and civic bodies within Delhi NCR.",
+        systemInstruction: "You are an expert AI municipal dispatcher and civic analyst for India. Your job is to analyze citizen grievances. You must strictly reject nonsense, personal, private, or hyperlocal emergency requests (e.g., calling an ambulance, fire, active crime, neighbor disputes, lost keys, getting married, unable to sleep, can't sleep, insomnia). Only approve genuine civic/municipal issues solvable by an MP office or civic departments (road repair, drainage, solid waste, street lights). Strictly reject vague entries or those missing landmarks (unless GPS is verified). Additionally, if an image is provided, strictly verify that the image content aligns with the text description. If there is a mismatch (e.g. black screen, selfie, random object, or different category), reject the complaint.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -925,6 +979,11 @@ Citizen Complaint description to evaluate: "${description}"
     }
 
     // Assign back to result object
+    if (result.imageVerificationStatus === "mismatch") {
+      result.isGenuine = false;
+      result.rejectionReason = "Rejection: Attached photo does not match or depict the reported civic issue.";
+    }
+
     result.latitude = resolvedLat || result.latitude || 28.6139;
     result.longitude = resolvedLng || result.longitude || 77.2090;
     result.cleanLocation = resolvedAddr || result.cleanLocation || "Delhi NCR";
