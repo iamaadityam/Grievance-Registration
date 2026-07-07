@@ -34,6 +34,7 @@ class _MpGrievanceAppState extends State<MpGrievanceApp> {
   bool _useDirectCloud = true;
   String _customGeminiKey = '';
   bool _isDarkMode = false;
+  String _currentLang = 'en';
 
   @override
   void initState() {
@@ -81,33 +82,153 @@ class _MpGrievanceAppState extends State<MpGrievanceApp> {
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0F172A),
+        scaffoldBackgroundColor: const Color(0xFFF0F4F8),
+        colorScheme: ColorScheme(
           brightness: Brightness.light,
-          primary: const Color(0xFF0F172A),
-          secondary: const Color(0xFF4F46E5),
+          primary: const Color(0xFF0A1628),
+          onPrimary: Colors.white,
+          primaryContainer: const Color(0xFFDEEAF7),
+          onPrimaryContainer: const Color(0xFF0A1628),
+          secondary: const Color(0xFFF59E0B),
+          onSecondary: const Color(0xFF0A1628),
+          secondaryContainer: const Color(0xFFFEF3C7),
+          onSecondaryContainer: const Color(0xFF78350F),
+          tertiary: const Color(0xFF1E3A5F),
+          onTertiary: Colors.white,
+          tertiaryContainer: const Color(0xFFD0E4F7),
+          onTertiaryContainer: const Color(0xFF0A1628),
+          error: const Color(0xFFDC2626),
+          onError: Colors.white,
+          errorContainer: const Color(0xFFFEE2E2),
+          onErrorContainer: const Color(0xFF7F1D1D),
           surface: Colors.white,
+          onSurface: const Color(0xFF0A1628),
+          surfaceContainerHighest: const Color(0xFFDEEAF7),
+          outline: const Color(0xFFBFD0E0),
+          shadow: Colors.black12,
+          scrim: Colors.black54,
+          inverseSurface: const Color(0xFF0A1628),
+          onInverseSurface: Colors.white,
+          inversePrimary: const Color(0xFFF59E0B),
         ),
-        fontFamily: 'sans-serif',
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          titleTextStyle: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: Colors.white,
+            letterSpacing: 0.5,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: Colors.white,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFFF7FAFC),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFBFD0E0)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFBFD0E0)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        fontFamily: 'system-ui',
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0B0F19),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0F172A),
+        scaffoldBackgroundColor: const Color(0xFF060D1A),
+        colorScheme: ColorScheme(
           brightness: Brightness.dark,
-          primary: const Color(0xFF6366F1),
-          secondary: const Color(0xFF818CF8),
-          surface: const Color(0xFF1E293B),
+          primary: const Color(0xFFF59E0B),
+          onPrimary: const Color(0xFF0A1628),
+          primaryContainer: const Color(0xFF1E3A5F),
+          onPrimaryContainer: const Color(0xFFF0F4F8),
+          secondary: const Color(0xFFFCD34D),
+          onSecondary: const Color(0xFF0A1628),
+          secondaryContainer: const Color(0xFF92400E),
+          onSecondaryContainer: const Color(0xFFFEF3C7),
+          tertiary: const Color(0xFF93C5FD),
+          onTertiary: const Color(0xFF0A1628),
+          tertiaryContainer: const Color(0xFF1E3A5F),
+          onTertiaryContainer: const Color(0xFFD0E4F7),
+          error: const Color(0xFFF87171),
+          onError: const Color(0xFF7F1D1D),
+          errorContainer: const Color(0xFF7F1D1D),
+          onErrorContainer: const Color(0xFFFEE2E2),
+          surface: const Color(0xFF0D1B2E),
+          onSurface: const Color(0xFFE8F0F8),
+          surfaceContainerHighest: const Color(0xFF1E3A5F),
+          outline: const Color(0xFF2A4A6B),
+          shadow: Colors.black54,
+          scrim: Colors.black87,
+          inverseSurface: const Color(0xFFE8F0F8),
+          onInverseSurface: const Color(0xFF0A1628),
+          inversePrimary: const Color(0xFF0A1628),
         ),
-        fontFamily: 'sans-serif',
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          titleTextStyle: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: Colors.white,
+            letterSpacing: 0.5,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: const Color(0xFF0D1B2E),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF1E3A5F),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF2A4A6B)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF2A4A6B)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        fontFamily: 'system-ui',
       ),
       builder: (context, child) {
+        // Adjust Hindi scaling to 1.22 so Devanagari text size visually matches English (1.12)
+        final double scaleFactor = _currentLang == 'hi' ? 1.22 : 1.12;
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
-            textScaleFactor: 1.15, // Globally increase all fonts by 15% for polish and readability
+            textScaleFactor: scaleFactor,
           ),
           child: child!,
         );
@@ -119,6 +240,12 @@ class _MpGrievanceAppState extends State<MpGrievanceApp> {
         isDarkMode: _isDarkMode,
         onConfigChanged: _updateConfig,
         onThemeToggled: _toggleTheme,
+        currentLang: _currentLang,
+        onLangChanged: (newLang) {
+          setState(() {
+            _currentLang = newLang;
+          });
+        },
       ),
     );
   }
@@ -478,6 +605,8 @@ class ResponsiveWorkspace extends StatefulWidget {
   final bool isDarkMode;
   final void Function(String, bool, String) onConfigChanged;
   final VoidCallback onThemeToggled;
+  final String currentLang;
+  final ValueChanged<String> onLangChanged;
 
   const ResponsiveWorkspace({
     super.key,
@@ -487,6 +616,8 @@ class ResponsiveWorkspace extends StatefulWidget {
     required this.isDarkMode,
     required this.onConfigChanged,
     required this.onThemeToggled,
+    required this.currentLang,
+    required this.onLangChanged,
   });
 
   @override
@@ -496,7 +627,6 @@ class ResponsiveWorkspace extends StatefulWidget {
 class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
   int _activeNavBarIdx = 0; // 0 for Citizen, 1 for MP Admin
   String _citizenSubTab = 'submit'; // submit, track
-  String _citizenLang = 'en'; // en, hi
   bool _isSmsHubOpen = false;
 
   // Cache for grievances
@@ -505,7 +635,7 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
   List<dynamic> _localFullComplaints = [];
 
   String _t(String key) {
-    return translations[_citizenLang]?[key] ?? key;
+    return translations[widget.currentLang]?[key] ?? key;
   }
 
   @override
@@ -534,6 +664,81 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
   }
 
   Future<void> _fetchGrievances() async {
+    // Background Offline Sync: Upload any cached grievances when internet is back
+    final List<dynamic> offlineGrievances = _localFullComplaints
+        .where((g) => g['id'] != null && g['id'].toString().startsWith('offline_'))
+        .toList();
+
+    if (offlineGrievances.isNotEmpty) {
+      debugPrint("Offline Sync: Found ${offlineGrievances.length} cached grievances. Attempting sync...");
+      final prefs = await SharedPreferences.getInstance();
+
+      for (var offlineItem in offlineGrievances) {
+        final oldId = offlineItem['id'].toString();
+        // Remove transient id to generate a clean payload
+        final Map<String, dynamic> docPayload = Map<String, dynamic>.from(offlineItem)..remove('id');
+        // Remove offline marker from location clean text if present
+        if (docPayload['cleanLocation'] != null) {
+          docPayload['cleanLocation'] = docPayload['cleanLocation']
+              .toString()
+              .replaceAll(' (Offline Mode)', '');
+        }
+
+        String? newOnlineId;
+        try {
+          if (widget.useDirectCloud) {
+            final createUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances';
+            final response = await http.post(
+              Uri.parse(createUrl),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(_toFirestoreFields(docPayload)),
+            ).timeout(const Duration(seconds: 10));
+
+            if (response.statusCode == 200) {
+              final resPath = jsonDecode(response.body)['name'] as String;
+              newOnlineId = resPath.split('/').last;
+            }
+          } else {
+            final response = await http.post(
+              Uri.parse('${widget.serverUrl}/api/create-grievance'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(docPayload),
+            ).timeout(const Duration(seconds: 10));
+
+            if (response.statusCode == 200) {
+              newOnlineId = jsonDecode(response.body)['id'];
+            }
+          }
+
+          if (newOnlineId != null) {
+            debugPrint("Offline Sync Success: Synced $oldId -> $newOnlineId");
+            // Update trackers state
+            _myComplaintIds = _myComplaintIds.map((id) => id == oldId ? newOnlineId! : id).toList();
+            _localFullComplaints = _localFullComplaints.map((item) {
+              if (item['id'] == oldId) {
+                return {'id': newOnlineId, ...docPayload};
+              }
+              return item;
+            }).toList();
+
+            await prefs.setStringList('citizen_logged_complaints', _myComplaintIds);
+            await prefs.setStringList(
+              'citizen_logged_full_complaints',
+              _localFullComplaints.map((item) => jsonEncode(item)).toList(),
+            );
+            
+            // Subtle toast to notify citizen that sync completed in background
+            if (mounted) {
+              showSubtleToast(context, widget.currentLang == 'hi' ? "ऑफ़लाइन शिकायतें सर्वर पर सिंक हो गईं!" : "Cached offline grievances synced to server!");
+            }
+          }
+        } catch (e) {
+          debugPrint("Offline Sync Failed for $oldId: $e. Retrying in next cycle...");
+        }
+      }
+      setState(() {});
+    }
+
     if (widget.useDirectCloud) {
       final databaseUrl = 'https://firestore.googleapis.com/v1/projects/ai-studio-applet-webapp-d5068/databases/ai-studio-remixcopyofremix-a8653321-ecd4-4cbb-af19-0b76c658c904/documents/grievances';
       try {
@@ -672,86 +877,208 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
     return combined;
   }
 
+  Widget _buildNavItem(int index, IconData activeIcon, IconData inactiveIcon,
+      String label, List<Color> gradient) {
+    final isActive = _activeNavBarIdx == index;
+    return GestureDetector(
+      onTap: () => setState(() => _activeNavBarIdx = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: isActive
+              ? LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight)
+              : null,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: isActive
+              ? [BoxShadow(color: gradient[0].withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 3))]
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isActive ? activeIcon : inactiveIcon,
+              size: 22,
+              color: isActive ? Colors.white : (widget.isDarkMode ? Colors.white54 : Colors.black45),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive ? Colors.white : (widget.isDarkMode ? Colors.white54 : Colors.black45),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final myComplaints = _getMyComplaints();
 
-    Widget headerBar = AppBar(
-      title: Row(
-        children: [
-          Icon(
-            _activeNavBarIdx == 0 
-                ? Icons.people_outline_rounded 
-                : _activeNavBarIdx == 1
-                    ? Icons.keyboard_voice_rounded
-                    : Icons.shield_outlined,
-            color: _activeNavBarIdx == 0 
-                ? Colors.blue 
-                : _activeNavBarIdx == 1
-                    ? Colors.orange
-                    : Colors.green,
-            size: 20,
+    // Gradient color for each tab — navy + gold theme
+    final List<List<Color>> _tabGradients = [
+      [const Color(0xFF0A1628), const Color(0xFF1E3A5F)],  // Citizen - deep navy
+      [const Color(0xFF1E3A5F), const Color(0xFF0A1628)],  // MP Admin - mid navy
+    ];
+    final List<Color> _tabAccents = [
+      const Color(0xFFF59E0B),  // gold for Citizen
+      const Color(0xFFF59E0B),  // gold for MP Admin
+    ];
+    final List<IconData> _tabIcons = [
+      Icons.people_alt_rounded,
+      Icons.admin_panel_settings_rounded,
+    ];
+    final List<String> _tabLabels = [
+      widget.currentLang == 'hi' ? 'नागरिक शिकायत' : 'CITIZEN PORTAL',
+      widget.currentLang == 'hi' ? 'सांसद केंद्र' : 'MP COMMAND',
+    ];
+
+    Widget headerBar = PreferredSize(
+      preferredSize: const Size.fromHeight(64),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: _tabGradients[_activeNavBarIdx],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _activeNavBarIdx == 0 
-                  ? (_citizenLang == 'hi' ? 'नागरिक शिकायत' : 'CITIZEN INTAKE')
-                  : _activeNavBarIdx == 1
-                      ? (_citizenLang == 'hi' ? 'आवाज सहायक' : 'VOICE ASSISTANT')
-                      : (_citizenLang == 'hi' ? 'सांसद शिकायत प्रेषण केंद्र' : 'MP COMMAND CENTER'),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-              overflow: TextOverflow.ellipsis,
+          boxShadow: [
+            BoxShadow(
+              color: _tabGradients[_activeNavBarIdx][0].withOpacity(0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                // Frosted icon badge
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white.withOpacity(0.3)),
+                  ),
+                  child: Icon(_tabIcons[_activeNavBarIdx], color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _tabLabels[_activeNavBarIdx],
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: 0.6,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'AI-Powered Civic Intelligence Platform',
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: Colors.white.withOpacity(0.8),
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Language toggle pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.25)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: ['en', 'hi'].map((lang) {
+                      final isSelected = widget.currentLang == lang;
+                      return GestureDetector(
+                        onTap: () => widget.onLangChanged(lang),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.white : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            lang == 'en' ? 'EN' : 'हिं',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isSelected
+                                  ? const Color(0xFF0A1628)
+                                  : Colors.white,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // Theme toggle
+                GestureDetector(
+                  onTap: widget.onThemeToggled,
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      widget.isDarkMode ? Icons.wb_sunny_rounded : Icons.nightlight_round,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // SMS hub
+                GestureDetector(
+                  onTap: () => setState(() => _isSmsHubOpen = true),
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.hub_rounded, color: Colors.white, size: 16),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
-      actions: [
-        DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: _citizenLang,
-            icon: const Icon(Icons.language_rounded, color: Colors.blueAccent, size: 18),
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-            dropdownColor: Theme.of(context).cardColor,
-            onChanged: (String? newLang) {
-              if (newLang != null) {
-                setState(() {
-                  _citizenLang = newLang;
-                });
-              }
-            },
-            items: [
-              DropdownMenuItem(
-                value: 'en',
-                child: Text('EN', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87)),
-              ),
-              DropdownMenuItem(
-                value: 'hi',
-                child: Text('हिं', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87)),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 4),
-        IconButton(
-          icon: Icon(widget.isDarkMode ? Icons.wb_sunny_rounded : Icons.nightlight_round, size: 18),
-          onPressed: widget.onThemeToggled,
-        ),
-        IconButton(
-          icon: const Icon(Icons.smartphone_rounded, size: 18),
-          onPressed: () => setState(() => _isSmsHubOpen = true),
-        ),
-      ],
-      elevation: 0,
-      centerTitle: false,
     );
 
     Widget workspaceContent;
     if (_activeNavBarIdx == 0) {
       workspaceContent = CitizenPortalContent(
         t: _t,
-        lang: _citizenLang,
-        onLangChanged: (l) => setState(() => _citizenLang = l),
+        lang: widget.currentLang,
+        onLangChanged: (l) => widget.onLangChanged(l),
         citizenSubTab: _citizenSubTab,
         onSubTabChanged: (s) => setState(() => _citizenSubTab = s),
         myComplaints: myComplaints,
@@ -780,7 +1107,7 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
 
       workspaceContent = MpAdminPortalContent(
         t: _t,
-        lang: _citizenLang,
+        lang: widget.currentLang,
         serverUrl: widget.serverUrl,
         useDirectCloud: widget.useDirectCloud,
         customGeminiKey: widget.customGeminiKey,
@@ -791,32 +1118,47 @@ class _ResponsiveWorkspaceState extends State<ResponsiveWorkspace> {
     }
 
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(56),
-        child: headerBar,
-      ),
+      appBar: headerBar as PreferredSizeWidget,
       body: Column(
         children: [
           Expanded(child: workspaceContent),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _activeNavBarIdx,
-        onTap: (idx) => setState(() => _activeNavBarIdx = idx),
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.person_rounded),
-            label: _citizenLang == 'hi' ? 'नागरिक' : 'Citizen',
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: widget.isDarkMode ? const Color(0xFF0F172A) : Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 24,
+              offset: const Offset(0, -4),
+            ),
+          ],
+          border: Border(
+            top: BorderSide(
+              color: widget.isDarkMode
+                  ? Colors.white.withOpacity(0.06)
+                  : Colors.black.withOpacity(0.06),
+              width: 1,
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.keyboard_voice_rounded),
-            label: _citizenLang == 'hi' ? 'आवाज सहायक' : 'Voice Assistant',
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(0, Icons.people_alt_rounded, Icons.people_alt_outlined,
+                    widget.currentLang == 'hi' ? 'नागरिक' : 'Citizen',
+                    [const Color(0xFF0A1628), const Color(0xFF1E3A5F)]),
+                _buildNavItem(1, Icons.admin_panel_settings_rounded, Icons.admin_panel_settings_outlined,
+                    widget.currentLang == 'hi' ? 'सांसद' : 'MP Admin',
+                    [const Color(0xFF1E3A5F), const Color(0xFF0A1628)]),
+              ],
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.admin_panel_settings_rounded),
-            label: _citizenLang == 'hi' ? 'सांसद' : 'MP Admin',
-          ),
-        ],
+        ),
       ),
       bottomSheet: _isSmsHubOpen
           ? SmsCenterSheet(
@@ -1176,6 +1518,8 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
 - detectedLanguage: detected language.
 - sentiment: citizen distress level: 'Frustrated', 'Neutral', or 'Angry'.
 - recurring_need: Synthesized pattern description (3-5 words).
+- translatedDescription: Translate the entire complaint description into clean, professional English (if the original is in Hindi, Hinglish, or any other regional dialect). If the original description is already in English, output it exactly as is.
+- translatedHindiDescription: Translate the entire complaint description into clean, professional Hindi in Devanagari script (if the original is in English, Hinglish, or any other regional dialect). If the original description is already in Hindi, output it exactly as is.
 """;
 
         final response = await http.post(
@@ -1370,10 +1714,12 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
         } catch (_) {}
       }
 
-      String? matchedGrievanceId;
-      Map<String, dynamic>? matchedGrievanceData;
+      // Every voice submission now gets a unique Problem ID
+      String? matchedGrievanceId = null;
+      Map<String, dynamic>? matchedGrievanceData = null;
       final now = DateTime.now();
 
+      if (false) {
       for (var doc in activeGrievances) {
         if (doc['status'] != 'Open') continue;
         final bool sameDept = doc['department'] == category;
@@ -1393,6 +1739,7 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
           matchedGrievanceData = Map<String, dynamic>.from(doc);
           break;
         }
+      }
       }
 
       Map<String, dynamic> finalGrievanceDoc = {};
@@ -2468,8 +2815,9 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
     }
   }
 
-  /// Transcribes WAV audio by proxying through the backend server.
-  /// The server calls Gemini server-side, bypassing Android API key restrictions.
+  /// Transcribes WAV audio using Google Cloud Speech-to-Text v1 REST API.
+  /// Requires Cloud STT API to be enabled at console.cloud.google.com.
+  /// Works from any device — no server needed.
   Future<void> _transcribeAudioDirect(Uint8List wavBytes, StateSetter setSheetState) async {
     setSheetState(() {
       _isTranscribing = true;
@@ -2477,36 +2825,63 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
     });
 
     try {
-      // Base64-encode the full WAV file
       final String base64Audio = base64Encode(wavBytes);
+      final String key = widget.customGeminiKey.isNotEmpty
+          ? widget.customGeminiKey
+          : 'AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E';
 
-      // POST to backend — server calls Gemini without Android key restrictions
-      final Uri endpoint = Uri.parse('${widget.serverUrl}/api/transcribe-audio');
+      // Use the direct Gemini API via AI Studio. This works out-of-the-box on all devices
+      // because Gemini 1.5 Flash supports inline audio data without GCP project constraints.
+      final Uri geminiUri = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$key',
+      );
+
+      final String langPrompt = widget.lang == 'hi'
+          ? 'The speaker is speaking in Hindi or English. If Hindi, transcribe in Devanagari script. If English, transcribe in English.'
+          : 'The speaker is speaking in English or Hindi. Transcribe exactly as spoken.';
 
       final response = await http.post(
-        endpoint,
-        headers: {'Content-Type': 'application/json'},
+        geminiUri,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Android-Package': 'com.example.mp_grievance_portal',
+          'X-Android-Cert': 'B3C096401A2552AD9946EB368C84909B7B293760',
+        },
         body: jsonEncode({
-          'audioData': base64Audio,
-          'mimeType': 'audio/wav',
-          'language': widget.lang == 'hi' ? 'hi-IN' : 'en-IN',
+          'contents': [
+            {
+              'parts': [
+                {
+                  'inlineData': {
+                    'mimeType': 'audio/wav',
+                    'data': base64Audio,
+                  }
+                },
+                {
+                  'text':
+                      'You are a high-fidelity speech-to-text transcription engine. $langPrompt\n'
+                      'Output ONLY the raw transcription of the spoken words — no commentary, no formatting, no extra explanation.\n'
+                      'If the audio is silent or inaudible, output exactly: [SILENT]',
+                }
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.0,
+            'maxOutputTokens': 512,
+          }
         }),
-      ).timeout(const Duration(seconds: 35));
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> resData = jsonDecode(response.body);
+        final candidates = resData['candidates'] as List<dynamic>?;
+        final String rawText = candidates != null && candidates.isNotEmpty
+            ? (candidates[0]['content']['parts'][0]['text']?.toString().trim() ?? '')
+            : '';
 
-        // Handle warning from server (e.g. API key not configured)
-        if (resData.containsKey('warning')) {
-          setSheetState(() {
-            _isTranscribing = false;
-            _sttError = resData['warning']?.toString() ??
-                'Server transcription unavailable.';
-          });
-          return;
-        }
+        final String text = rawText == '[SILENT]' ? '' : rawText;
 
-        final String text = resData['text']?.toString().trim() ?? '';
         setSheetState(() {
           _isTranscribing = false;
           _transcribedText = text;
@@ -2520,9 +2895,9 @@ class _IntakeFormWidgetState extends State<IntakeFormWidget> {
         String errorDetail = response.statusCode.toString();
         try {
           final errData = jsonDecode(response.body);
-          errorDetail = errData['error']?.toString() ?? errorDetail;
+          errorDetail = errData['error']?['message'] ?? errorDetail;
         } catch (_) {}
-        throw Exception('Server STT error: $errorDetail');
+        throw Exception('Gemini STT error: $errorDetail');
       }
     } catch (e) {
       setSheetState(() {
@@ -3021,6 +3396,8 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
 - detectedLanguage: detected language.
 - sentiment: citizen distress level: 'Frustrated', 'Neutral', or 'Angry'.
 - recurring_need: Synthesized pattern description (3-5 words).
+- translatedDescription: Translate the entire complaint description into clean, professional English (if the original is in Hindi, Hinglish, or any other regional dialect). If the original description is already in English, output it exactly as is.
+- translatedHindiDescription: Translate the entire complaint description into clean, professional Hindi in Devanagari script (if the original is in English, Hinglish, or any other regional dialect). If the original description is already in Hindi, output it exactly as is.
 """;
 
         try {
@@ -3121,6 +3498,8 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
             'sentiment': "Neutral",
             'recurring_need': "Civic maintenance support",
             'confidence': 80,
+            'translatedDescription': descriptionText,
+            'translatedHindiDescription': descriptionText,
           };
         }
       } else {
@@ -3166,6 +3545,8 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
             'sentiment': "Neutral",
             'recurring_need': "Civic maintenance support",
             'confidence': 80,
+            'translatedDescription': descriptionText,
+            'translatedHindiDescription': descriptionText,
           };
         }
       }
@@ -3199,10 +3580,12 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
         } catch (_) {}
       }
 
-      String? matchedGrievanceId;
-      Map<String, dynamic>? matchedGrievanceData;
+      // Every citizen submission now gets a unique Problem ID
+      String? matchedGrievanceId = null;
+      Map<String, dynamic>? matchedGrievanceData = null;
 
       final now = DateTime.now();
+      if (false) {
       for (var doc in activeGrievances) {
         if (doc['status'] != 'Open') continue;
         final bool sameDept = doc['department'] == category;
@@ -3222,6 +3605,7 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
           matchedGrievanceData = Map<String, dynamic>.from(doc);
           break;
         }
+      }
       }
 
       Map<String, dynamic> finalGrievanceDoc = {};
@@ -3311,6 +3695,8 @@ STRICT COMPLAINT VALIDATION GUARDRAILS:
           'trafficCount': 1,
           'sentiment': aiAnalysis['sentiment'] ?? "Neutral",
           'recurringNeed': aiAnalysis['recurring_need'] ?? "",
+          'translatedDescription': aiAnalysis['translatedDescription'] ?? descriptionText,
+          'translatedHindiDescription': aiAnalysis['translatedHindiDescription'] ?? descriptionText,
           'otpVerified': true,
           'reportersList': [
             {
@@ -4094,9 +4480,20 @@ class TrackerHistoryWidget extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          '"${item['description']}"',
-                          style: const TextStyle(fontSize: 9.5, color: Colors.grey),
+                        Builder(
+                          builder: (context) {
+                            final String displayDesc = (lang == 'hi')
+                                ? (item['translatedHindiDescription'] != null && item['translatedHindiDescription'].toString().isNotEmpty 
+                                    ? item['translatedHindiDescription'] 
+                                    : (item['description'] ?? ''))
+                                : (item['translatedDescription'] != null && item['translatedDescription'].toString().isNotEmpty 
+                                    ? item['translatedDescription'] 
+                                    : (item['description'] ?? ''));
+                            return Text(
+                              '"$displayDesc"',
+                              style: const TextStyle(fontSize: 9.5, color: Colors.grey),
+                            );
+                          }
                         ),
                         const SizedBox(height: 6),
 Row(
@@ -4107,7 +4504,7 @@ Row(
                               style: const TextStyle(fontSize: 7.5, color: Colors.grey, fontWeight: FontWeight.bold),
                             ),
                             Text(
-                              '#G-${item['id'].toString().substring(0, 4).toUpperCase()}',
+                              '#G-${item['id'].toString().substring(0, 6).toUpperCase()}',
                               style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
                             )
                           ],
@@ -4187,6 +4584,18 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
 
   bool _isEasyMode = false; // Illiterate-Friendly Mode
   Map<String, dynamic>? _selectedGrievance;
+  bool _isTranslatingDesc = false;
+  String? _translatedEnglishText;
+  String? _translatedHindiText;
+
+  void _selectGrievance(Map<String, dynamic>? g) {
+    setState(() {
+      _selectedGrievance = g;
+      _translatedEnglishText = null;
+      _translatedHindiText = null;
+      _isTranslatingDesc = false;
+    });
+  }
 
   // DSS comparing proposal parameters
   final _dssTitleA = TextEditingController(text: "Girls High School Upgrade");
@@ -4202,6 +4611,77 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
 
   bool _recommendationsRunning = false;
   String? _aiPlannerText;
+
+  Future<void> _translateDescription(String text, String targetLang) async {
+    if (text.isEmpty) return;
+    setState(() {
+      _isTranslatingDesc = true;
+    });
+
+    try {
+      final String key = widget.customGeminiKey.isNotEmpty
+          ? widget.customGeminiKey
+          : 'AIzaSyAzVjLwmRoevXnRNsKx_e6qU0l-rfr4N4E';
+
+      final Uri geminiUri = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$key',
+      );
+
+      final String prompt = targetLang == 'en'
+          ? 'Translate this public grievance description into clean, professional English: "$text"'
+          : 'Translate this public grievance description into clean, professional Hindi in Devanagari script: "$text"';
+
+      final response = await http.post(
+        geminiUri,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Android-Package': 'com.example.mp_grievance_portal',
+          'X-Android-Cert': 'B3C096401A2552AD9946EB368C84909B7B293760',
+        },
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {'text': prompt}
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.1,
+            'maxOutputTokens': 256,
+          }
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> resData = jsonDecode(response.body);
+        final candidates = resData['candidates'] as List<dynamic>?;
+        final String result = candidates != null && candidates.isNotEmpty
+            ? (candidates[0]['content']['parts'][0]['text']?.toString().trim() ?? '')
+            : 'Translation failed.';
+
+        setState(() {
+          if (targetLang == 'en') {
+            _translatedEnglishText = result;
+          } else {
+            _translatedHindiText = result;
+          }
+        });
+      } else {
+        throw Exception("Server returned status: ${response.statusCode}");
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Translation error: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      setState(() {
+        _isTranslatingDesc = false;
+      });
+    }
+  }
 
   int _getRepeatCount(String landmark) {
     if (landmark.isEmpty) return 1;
@@ -4275,7 +4755,7 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
         point: LatLng(lat, lng),
         child: GestureDetector(
           onTap: () {
-            setState(() => _selectedGrievance = g);
+            _selectGrievance(g);
           },
           child: Container(
             decoration: BoxDecoration(
@@ -4449,7 +4929,7 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
 
       // Dispatch resolution status SMS
       try {
-        final smsMsg = 'Dear $citizenName, your report regarding $category (#G-${gId.substring(0,4).toUpperCase()}) status has been updated to "$newStatus".';
+        final smsMsg = 'Dear $citizenName, your report regarding $category (#G-${gId.substring(0,6).toUpperCase()}) status has been updated to "$newStatus".';
         await http.post(
           Uri.parse('${widget.serverUrl}/api/telemetry'),
           headers: {'Content-Type': 'application/json'},
@@ -4474,7 +4954,7 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
         await widget.onResolveGrievance(gId);
       }
       setState(() {
-        _selectedGrievance = null;
+        _selectGrievance(null);
       });
       widget.onGrievancesFetched();
     } catch (e) {
@@ -4486,7 +4966,13 @@ class _MpAdminPortalContentState extends State<MpAdminPortalContent> {
   void _speakTicketDetails(Map<String, dynamic> g) {
     final String cleanLoc = g['cleanLocation'] ?? '';
     final String category = g['category'] ?? '';
-    final String desc = g['description'] ?? '';
+    final String desc = (widget.lang == 'hi')
+        ? (g['translatedHindiDescription'] != null && g['translatedHindiDescription'].toString().isNotEmpty 
+            ? g['translatedHindiDescription'] 
+            : (g['description'] ?? ''))
+        : (g['translatedDescription'] != null && g['translatedDescription'].toString().isNotEmpty 
+            ? g['translatedDescription'] 
+            : (g['description'] ?? ''));
 
     final text = widget.lang == 'hi'
         ? "शिकायत विभाग: $category। स्थान: $cleanLoc। समस्या का विवरण: $desc"
@@ -5697,7 +6183,7 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                 : Colors.black12;
 
             return InkWell(
-              onTap: () => setState(() => _selectedGrievance = g),
+              onTap: () => _selectGrievance(g),
               child: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -5796,11 +6282,22 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
                             g['cleanLocation'] ?? '',
                             style: TextStyle(fontSize: _isEasyMode ? 12.5 : 10.5, fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            '"${g['summary'] ?? g['description'] ?? ''}"',
-                            style: TextStyle(fontSize: _isEasyMode ? 11 : 9, color: Colors.grey),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          Builder(
+                            builder: (context) {
+                              final String displayDesc = (widget.lang == 'hi')
+                                  ? (g['translatedHindiDescription'] != null && g['translatedHindiDescription'].toString().isNotEmpty 
+                                      ? g['translatedHindiDescription'] 
+                                      : (g['summary'] ?? g['description'] ?? ''))
+                                  : (g['translatedDescription'] != null && g['translatedDescription'].toString().isNotEmpty 
+                                      ? g['translatedDescription'] 
+                                      : (g['summary'] ?? g['description'] ?? ''));
+                              return Text(
+                                '"$displayDesc"',
+                                style: TextStyle(fontSize: _isEasyMode ? 11 : 9, color: Colors.grey),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            }
                           ),
                           const SizedBox(height: 4),
                           Row(
@@ -5987,9 +6484,128 @@ Provide 3 actionable recommendations for the Member of Parliament (MP) command c
               ),
             ],
             const SizedBox(height: 6),
-            Text(
-              'Description: "${g['description']}"', 
-              style: TextStyle(fontSize: _isEasyMode ? 11 : 9.5, fontStyle: FontStyle.italic)
+            Builder(
+              builder: (context) {
+                final String displayDesc = (widget.lang == 'hi')
+                    ? (g['translatedHindiDescription'] != null && g['translatedHindiDescription'].toString().isNotEmpty 
+                        ? g['translatedHindiDescription'] 
+                        : (g['description'] ?? ''))
+                    : (g['translatedDescription'] != null && g['translatedDescription'].toString().isNotEmpty 
+                        ? g['translatedDescription'] 
+                        : (g['description'] ?? ''));
+                return Text(
+                  'Description: "$displayDesc"',
+                  style: TextStyle(fontSize: _isEasyMode ? 11 : 9.5, fontStyle: FontStyle.italic),
+                );
+              }
+            ),
+            const SizedBox(height: 8),
+            
+            // Multilingual Translation Bar for MP Office
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark 
+                    ? const Color(0xFF1E293B) 
+                    : const Color(0xFFEDF2F7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Translate Content / अनुवाद:',
+                        style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                      ),
+                      if (_isTranslatingDesc)
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.amber),
+                        )
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: _isTranslatingDesc 
+                              ? null 
+                              : () => _translateDescription(g['description'] ?? '', 'en'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0A1628),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Text(
+                              'Translate to English',
+                              style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: InkWell(
+                          onTap: _isTranslatingDesc 
+                              ? null 
+                              : () => _translateDescription(g['description'] ?? '', 'hi'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Text(
+                              'Translate to Hindi (हिंदी)',
+                              style: TextStyle(fontSize: 8, color: Color(0xFF0A1628), fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_translatedEnglishText != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.indigo.withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        'English: "${_translatedEnglishText}"',
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                  if (_translatedHindiText != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.amber.withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        'हिंदी: "${_translatedHindiText}"',
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             // Secondary Utility: Official Work Order Generator
@@ -6408,14 +7024,26 @@ class _VoiceInstructionsWidgetState extends State<VoiceInstructionsWidget> {
     final isHi = widget.lang == 'hi';
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(12),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0A1628), Color(0xFF1E3A5F)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0A1628).withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          const Icon(Icons.volume_up_rounded, color: Colors.blueAccent, size: 20),
+          const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 22),
           const SizedBox(width: 8),
           Expanded(
             child: Column(

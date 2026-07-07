@@ -1491,7 +1491,7 @@ Analysis of recent citizen-submitted reports shows that **Water Logging & Draina
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-1.5-flash",
       contents: `You are the Senior Civic Planning Advisor to the Member of Parliament (MP).
       Review these active citizen grievances logged in our portal:
       \${complaintsSummary || "No active complaints."}
