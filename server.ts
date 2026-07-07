@@ -3,15 +3,17 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { initializeApp as initializeFirebaseApp } from "firebase/app";
-import { getFirestore, collection, addDoc, getDocs, updateDoc, doc } from "firebase/firestore";
-import firebaseConfig from "./firebase-applet-config.json";
+import fs from "fs";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, getDoc } from "firebase/firestore";
 
 // Load environment variables
 dotenv.config();
 
-// Initialize Firebase
-const firebaseApp = initializeFirebaseApp(firebaseConfig);
+// Initialize Firebase App & Firestore on Server
+const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
+const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 const app = express();
@@ -23,51 +25,6 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 // API: Get Google Maps Key securely
 app.get("/api/maps-key", (req, res) => {
   res.json({ key: process.env.GOOGLE_MAPS_PLATFORM_KEY || "" });
-});
-
-// API: Fetch grievances from Firestore
-app.get("/api/grievances", async (req, res) => {
-  try {
-    const querySnapshot = await getDocs(collection(db, "grievances"));
-    const grievances: any[] = [];
-    querySnapshot.forEach((docSnap) => {
-      grievances.push({ id: docSnap.id, ...docSnap.data() });
-    });
-    // Sort newest first
-    grievances.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    res.json({ grievances });
-  } catch (error: any) {
-    console.error("Error fetching grievances:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// API: Create new grievance in Firestore
-app.post("/api/create-grievance", async (req, res) => {
-  try {
-    const grievanceData = req.body;
-    const docRef = await addDoc(collection(db, "grievances"), grievanceData);
-    res.json({ id: docRef.id });
-  } catch (error: any) {
-    console.error("Error creating grievance:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// API: Update grievance in Firestore
-app.post("/api/update-grievance", async (req, res) => {
-  try {
-    const { id, ...updateData } = req.body;
-    if (!id) {
-      return res.status(400).json({ error: "Grievance ID is required" });
-    }
-    const docRef = doc(db, "grievances", id);
-    await updateDoc(docRef, updateData);
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error("Error updating grievance:", error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // In-memory store for SMS notifications dispatched by the app
@@ -82,55 +39,6 @@ interface SmsLog {
 }
 
 const smsLogs: SmsLog[] = [];
-
-// In-memory cache for OTP codes
-const activeOtps = new Map<string, string>();
-
-// API: Send simulated SMS OTP
-app.post("/api/send-otp", (req, res) => {
-  const { contact } = req.body;
-  if (!contact) {
-    return res.status(400).json({ error: "Contact number is required" });
-  }
-  // Generate random 4-digit code
-  const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
-  activeOtps.set(contact.trim(), otpCode);
-  
-  const msg = `Your MP Grievance Portal verification code is ${otpCode}. Valid for 5 minutes.`;
-  
-  // Push to local smsLogs for simulation visibility in SMS Center
-  smsLogs.unshift({
-    id: "otp_" + Math.random().toString(36).substring(2, 11),
-    to: contact.trim(),
-    message: msg,
-    timestamp: new Date().toISOString(),
-    status: "simulated",
-    gateway: "local_console",
-    details: `Simulated OTP verification code: ${otpCode}`
-  });
-  if (smsLogs.length > 100) smsLogs.pop();
-  
-  console.log(`[OTP Service] Generated OTP for ${contact}: ${otpCode}`);
-  
-  res.json({ success: true, message: "OTP sent successfully", otp: otpCode });
-});
-
-// API: Verify SMS OTP code
-app.post("/api/verify-otp", (req, res) => {
-  const { contact, otp } = req.body;
-  if (!contact || !otp) {
-    return res.status(400).json({ error: "Contact and OTP are required" });
-  }
-  const cleanContact = contact.trim();
-  const cleanOtp = otp.trim();
-  const storedOtp = activeOtps.get(cleanContact);
-  
-  if (storedOtp && storedOtp === cleanOtp) {
-    activeOtps.delete(cleanContact);
-    return res.json({ success: true });
-  }
-  res.status(400).json({ error: "Invalid OTP code" });
-});
 
 // API: Retrieve SMS notification transmission logs
 app.get("/api/sms-logs", (req, res) => {
@@ -549,80 +457,31 @@ app.post("/api/analyze-grievance", async (req, res) => {
       }
     }
 
-    // Fallback in case of missing key to avoid hard crash: run rule-based guardrail checks first
-    const cleanDesc = description.toLowerCase();
-    
-    const isSpam = cleanDesc.length < 12 ||
-        cleanDesc.includes("hello") ||
-        cleanDesc.includes("test") ||
-        cleanDesc.includes("testing") ||
-        cleanDesc.includes("asdf") ||
-        cleanDesc.includes("123");
-        
-    const isNonsenseOrPrivate = cleanDesc.includes("sleep") ||
-        cleanDesc.includes("slepe") ||
-        cleanDesc.includes("neend") ||
-        cleanDesc.includes("so nahi") ||
-        cleanDesc.includes("insomnia") ||
-        cleanDesc.includes("marry") ||
-        cleanDesc.includes("marriage") ||
-        cleanDesc.includes("shaadi") ||
-        cleanDesc.includes("wedding") ||
-        cleanDesc.includes("keys") ||
-        cleanDesc.includes("chabi") ||
-        cleanDesc.includes("dog") ||
-        cleanDesc.includes("pet") ||
-        cleanDesc.includes("cat") ||
-        cleanDesc.includes("puppy") ||
-        cleanDesc.includes("fight") ||
-        cleanDesc.includes("love") ||
-        cleanDesc.includes("friend") ||
-        cleanDesc.includes("loan") ||
-        cleanDesc.includes("money") ||
-        cleanDesc.includes("tire") ||
-        cleanDesc.includes("puncture");
-
-    const isEmergency = cleanDesc.includes("ambulance") ||
-        cleanDesc.includes("hospital emergency") ||
-        cleanDesc.includes("accident") ||
-        cleanDesc.includes("police") ||
-        cleanDesc.includes("crime") ||
-        cleanDesc.includes("fire");
-
-    const isGenuine = !isSpam && !isNonsenseOrPrivate && !isEmergency;
-    let rejectionReason = "";
-    if (isSpam) {
-      rejectionReason = "The grievance description is too short, vague, or contains test words.";
-    } else if (isNonsenseOrPrivate) {
-      rejectionReason = "Rejection: Hyperlocal, personal, or private requests (such as sleep issues, marriage, lost items, or pets) cannot be resolved by the MP Command Center.";
-    } else if (isEmergency) {
-      rejectionReason = "Rejection: Time-sensitive emergency requests (medical/crime/fire) cannot be handled here. Please dial 112 or 108 immediately.";
-    }
-
+    // Fallback in case of missing key to avoid hard crash
     return res.json({
-      isGenuine,
-      rejectionReason,
-      summary: isGenuine ? ("Citizen reported an issue: " + description.substring(0, 60) + "...") : "Rejected due to guardrail policy violation.",
-      category: isGenuine ? (description.toLowerCase().includes("water") || description.toLowerCase().includes("flood") 
+      isGenuine: true,
+      rejectionReason: "",
+      summary: "Citizen reported an issue: " + description.substring(0, 60) + "...",
+      category: description.toLowerCase().includes("water") || description.toLowerCase().includes("flood") 
         ? "Water Drainage" 
         : description.toLowerCase().includes("road") || description.toLowerCase().includes("hole")
         ? "Road Infrastructure"
-        : "Solid Waste") : "Rejected",
-      severity: isGenuine ? (description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? "High" : "Medium") : "Low",
-      urgency: isGenuine ? (description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? 9 : 5) : 1,
-      affected_people: isGenuine ? "Local residents and commuters" : "None",
-      suggested_department: isGenuine ? (description.toLowerCase().includes("road") ? "PWD" : "MCD") : "None",
+        : "Solid Waste",
+      severity: description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? "High" : "Medium",
+      urgency: description.toLowerCase().includes("urgent") || description.toLowerCase().includes("danger") ? 9 : 5,
+      affected_people: "Local residents and commuters",
+      suggested_department: description.toLowerCase().includes("road") ? "PWD" : "MCD",
       confidence: 90,
-      keywords: isGenuine ? ["reported", "issue", "citizen"] : ["rejected", "guardrail"],
-      cleanLocation: isGenuine ? resolvedCleanLocation : "N/A",
-      latitude: isGenuine ? resolvedLatitude : 28.6139,
-      longitude: isGenuine ? resolvedLongitude : 77.2090,
+      keywords: ["reported", "issue", "citizen"],
+      cleanLocation: resolvedCleanLocation,
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
       detectedLanguage: fallbackLang,
       imageVerificationStatus: imageData ? "verified" : "not_attached",
       imageVerificationMessage: imageData ? "Attached photo matches description (Fallback verification bypassed)." : "No image uploaded.",
-      guardrailRelevanceScore: isGenuine ? 1.0 : 0.0,
-      guardrailFlaggedReason: isGenuine ? "NONE" : "IRRELEVANT_SERVICE_REQUEST",
-      guardrailResolvedCategory: isGenuine ? (description.toLowerCase().includes("road") ? "Potholes" : description.toLowerCase().includes("water") ? "Water Logging" : "Garbage") : "DEFLECTED",
+      guardrailRelevanceScore: 1.0,
+      guardrailFlaggedReason: "NONE",
+      guardrailResolvedCategory: description.toLowerCase().includes("road") ? "Potholes" : description.toLowerCase().includes("water") ? "Water Logging" : "Garbage",
       guardrailExecutiveSummary: description,
       warning: "Running in fallback mode. Please configure GEMINI_API_KEY in secrets."
     });
@@ -745,13 +604,8 @@ Citizen Complaint description to evaluate: "${description}"
     Then, analyze the description and generate a structured JSON report.
     
     STRICT COMPLAINT VALIDATION GUARDRAILS:
-    1. MP-SOLVABLE ONLY: Only accept grievances that can be resolved by a Member of Parliament (MP) command center or municipal/state civic departments (e.g. road infrastructure, public sanitation, solid waste, water logging/drainage, street lights, utility support).
-    2. REJECT EMERGENCY/TIME-SENSITIVE: Set isGenuine = false for highly time-sensitive emergency requests (e.g., calling an ambulance, fire, active crime/police assistance). Tell them to dial 112/108.
-    3. REJECT NONSENSE/PRIVATE/HYPERLOCAL: Set isGenuine = false for nonsense, personal, or private requests (e.g., "I can't get married", "unable to sleep", "can't sleep", "insomnia", "neend nahi aa rahi", "lost keys", "flat tire", "neighbor's music is loud", "lost dog", "need personal loan").
-    4. PHOTO ALIGNMENT SHIELD: If an image is attached to this grievance, inspect its visual content. The image MUST depict the reported civic issue. If the image is a black screen, blank, random selfie, spam, or completely unrelated to the text description (e.g., a photo of garbage when the text reports a pothole, or a pothole when they report a roadblock), you MUST set isGenuine to false and rejectionReason to "Rejection: Attached photo does not match or depict the reported civic issue."
-    4. PHOTO ALIGNMENT SHIELD: If an image is attached to this grievance, inspect its visual content. The image MUST depict the reported civic issue. If the image is a black screen, blank, random selfie, spam, or completely unrelated to the text description (e.g., a photo of garbage when the text reports a pothole, or a pothole when they report a roadblock), you MUST set isGenuine to false and rejectionReason to "Rejection: Attached photo does not match or depict the reported civic issue."
-    4. VAGUENESS: Deny any vague grievances. A grievance is considered vague if it lacks actionable physical detail, is extremely short, or only contains generic terms (e.g. "garbage here", "water logging is bad", "clean the road", "fix potholes" without further detail). In such cases, isGenuine must be set to false and rejectionReason must politely explain that the issue lacks detail.
-    5. LANDMARK REQUIREMENT: ${isHasGps ? `Since the user provided verified GPS coordinates, skip the strict landmark requirement rejection check. Set isGenuine to true.` : `The grievance MUST include an explicit, clear nearby landmark or physical point of interest (e.g., "near standard shop", "opposite milk booth", "behind block A gate", "beside pillar 55", "near sector park"). If no specific landmark or nearby indicator is present in the text description, set isGenuine to false and rejectionReason must politely inform them that a landmark is mandatory.`}
+    1. VAGUENESS: Deny any vague grievances. A grievance is considered vague if it lacks actionable physical detail, is extremely short, or only contains generic terms (e.g. "garbage here", "water logging is bad", "clean the road", "fix potholes" without further detail). In such cases, isGenuine must be set to false and rejectionReason must politely explain that the issue lacks detail.
+    2. LANDMARK REQUIREMENT: ${isHasGps ? `Since the user provided verified GPS coordinates, skip the strict landmark requirement rejection check. Set isGenuine to true.` : `The grievance MUST include an explicit, clear nearby landmark or physical point of interest (e.g., "near standard shop", "opposite milk booth", "behind block A gate", "beside pillar 55", "near sector park"). If no specific landmark or nearby indicator is present in the text description, set isGenuine to false and rejectionReason must politely inform them that a landmark is mandatory.`}
     3. LANGUAGE DETECTION: Automatically detect the language of the grievance description (e.g., English, Hindi, Hinglish, Punjabi, etc.) and save it in detectedLanguage.
     4. SPAM/TESTS: Deny gibberish, greetings, offensive words, and obvious test terms ("test", "hello", "asdf", "testing", "123").
     5. CROSS-MODAL VISION ALIGNMENT SHIELD: ${hasImage ? `An image is attached to this grievance. Look at the attached image carefully. Verify whether the visual content of the image actually matches and justifies the text description, category, and claims (e.g. if the category is 'Potholes' and they write about a huge hole, the image should actually show road damage, a hole, or tarmac issue. If description is about garbage, image should show waste/trash). If the image is completely unrelated, blank, spam, clean street, a random selfie, or severe mismatch, set imageVerificationStatus to 'mismatch' and explain the severe mismatch in imageVerificationMessage. Otherwise, if it matches and justifies the claims, set imageVerificationStatus to 'verified' and explain in imageVerificationMessage.` : `No image is attached. Set imageVerificationStatus to 'not_attached' and imageVerificationMessage to 'No image uploaded'.`}
@@ -772,9 +626,7 @@ Citizen Complaint description to evaluate: "${description}"
     - longitude: The estimated/resolved longitude coordinate.
     - detectedLanguage: The automatically detected language of the grievance description text (e.g. 'English', 'Hindi', 'Hinglish').
     - imageVerificationStatus: Must be one of 'verified', 'not_attached', or 'mismatch'.
-    - imageVerificationMessage: Description of the cross-modal verification evaluation.
-    - sentiment: Automatically detected citizen sentiment/distress level. Must be one of: 'Frustrated', 'Neutral', 'Angry'.
-    - recurring_need: Synthesized systemic/recurring civic pattern description (3-5 words).`;
+    - imageVerificationMessage: Description of the cross-modal verification evaluation.`;
 
     let contents: any = prompt;
     if (hasImage) {
@@ -795,7 +647,7 @@ Citizen Complaint description to evaluate: "${description}"
       model: "gemini-3.5-flash",
       contents,
       config: {
-        systemInstruction: "You are an expert AI municipal dispatcher and civic analyst for India. Your job is to analyze citizen grievances. You must strictly reject nonsense, personal, private, or hyperlocal emergency requests (e.g., calling an ambulance, fire, active crime, neighbor disputes, lost keys, getting married, unable to sleep, can't sleep, insomnia). Only approve genuine civic/municipal issues solvable by an MP office or civic departments (road repair, drainage, solid waste, street lights). Strictly reject vague entries or those missing landmarks (unless GPS is verified). Additionally, if an image is provided, strictly verify that the image content aligns with the text description. If there is a mismatch (e.g. black screen, selfie, random object, or different category), reject the complaint.",
+        systemInstruction: "You are an expert AI municipal dispatcher and civic analyst for India. Your job is to analyze citizen grievances, strictly reject vague entries or those missing landmarks (unless GPS is verified), detect the input language, perform cross-modal image validation, and suggest coordinates and civic bodies within Delhi NCR.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -864,14 +716,6 @@ Citizen Complaint description to evaluate: "${description}"
             imageVerificationMessage: {
               type: Type.STRING,
               description: "Explaining why image aligns or mismatches the text complaint.",
-            },
-            sentiment: {
-              type: Type.STRING,
-              description: "Automatically detected citizen sentiment/distress level: 'Frustrated', 'Neutral', or 'Angry'.",
-            },
-            recurring_need: {
-              type: Type.STRING,
-              description: "Synthesized systemic/recurring civic pattern description (3-5 words).",
             }
           },
           required: [
@@ -890,9 +734,7 @@ Citizen Complaint description to evaluate: "${description}"
             "longitude",
             "detectedLanguage",
             "imageVerificationStatus",
-            "imageVerificationMessage",
-            "sentiment",
-            "recurring_need"
+            "imageVerificationMessage"
           ]
         }
       }
@@ -979,11 +821,6 @@ Citizen Complaint description to evaluate: "${description}"
     }
 
     // Assign back to result object
-    if (result.imageVerificationStatus === "mismatch") {
-      result.isGenuine = false;
-      result.rejectionReason = "Rejection: Attached photo does not match or depict the reported civic issue.";
-    }
-
     result.latitude = resolvedLat || result.latitude || 28.6139;
     result.longitude = resolvedLng || result.longitude || 77.2090;
     result.cleanLocation = resolvedAddr || result.cleanLocation || "Delhi NCR";
@@ -1023,8 +860,6 @@ Citizen Complaint description to evaluate: "${description}"
     result.guardrailFlaggedReason = guardrailResult.flagged_reason;
     result.guardrailResolvedCategory = guardrailResult.resolved_category;
     result.guardrailExecutiveSummary = guardrailResult.executive_summary;
-    result.sentiment = result.sentiment || "Neutral";
-    result.recurringNeed = result.recurring_need || "";
 
     res.json(result);
   } catch (error: any) {
@@ -1154,8 +989,6 @@ Citizen Complaint description to evaluate: "${description}"
       guardrailFlaggedReason: "NONE",
       guardrailResolvedCategory: finalCategory.includes("Road") ? "Potholes" : finalCategory.includes("Water") ? "Water Logging" : "Garbage",
       guardrailExecutiveSummary: description,
-      sentiment: fallbackDescLower.includes("urgent") || fallbackDescLower.includes("danger") || fallbackDescLower.includes("bad") ? "Frustrated" : "Neutral",
-      recurringNeed: `Issue in ${finalCategory.split(" ")[0]}`,
       warning: `Gemini API Error: ${error.message || "Quota Limit"}. Gracefully recovered using rule-based local fallback.`
     });
   }
@@ -1190,7 +1023,7 @@ app.post("/api/transcribe-audio", async (req, res) => {
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-3.5-flash",
       contents: [
         {
           inlineData: {
@@ -1220,89 +1053,50 @@ app.post("/api/transcribe-audio", async (req, res) => {
   }
 });
 
-// API: Analyze and compare competing proposals against real demand using 7 weighted factors
+// API: Analyze and compare competing proposals against real demand
 app.post("/api/analyze-and-compare-proposals", async (req, res) => {
   const { proposals, sector, activeGrievancesCount, categoryDistribution } = req.body;
 
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    // Generate deterministic ranking based on the 7 weighted factors:
-    // 1. Severity (25%)
-    // 2. Population Impact (20%)
-    // 3. Citizen Demand (20%)
-    // 4. Infrastructure Gap (15%)
-    // 5. Government Plan Alignment (10%)
-    // 6. Cost Efficiency (5%)
-    // 7. Social Equity (5%)
+    // Generate high-quality mock-real analysis when API key is not configured or is mock
+    // to preserve robust offline support
     const ranked = proposals.map((p: any) => {
-      let severity = 60; // scale of 0-100
-      let populationImpact = 50;
-      let citizenDemand = Math.min(100, (activeGrievancesCount || 0) * 15 + 20);
-      let infrastructureGap = 50;
-      let govAlignment = 80;
-      let costEfficiency = 70;
-      let socialEquity = 75;
-
+      // Calculate a deterministic score based on parameters to make it feel super objective
+      let score = 70;
       let reasons = [];
-
-      if (p.type === "school_upgrade" || p.title?.toLowerCase().includes("school")) {
-        const enrollment = Number(p.parameters?.enrollment || p.enrollment || 300);
-        const travel = Number(p.parameters?.travelDistance || p.travelDistance || 5);
-        
-        severity = Math.min(100, travel * 8);
-        populationImpact = Math.min(100, enrollment / 5);
-        infrastructureGap = Math.min(100, travel * 7);
-        govAlignment = 90; // highly aligned with state education plans
-        socialEquity = 95; // helps local children, gender equity if girls school
-        costEfficiency = 80;
-
-        reasons.push(`Travel distance of ${travel}km indicates severe accessibility gaps for ${enrollment} active students.`);
-        reasons.push("Directly fills school infrastructure gaps and improves safety for children.");
-      } else if (p.type === "vocational_centre" || p.title?.toLowerCase().includes("skill") || p.title?.toLowerCase().includes("vocational")) {
-        const travel = Number(p.parameters?.travelDistance || p.travelDistance || 15);
-        const capacity = Number(p.parameters?.capacity || p.capacity || 100);
-
-        severity = 65;
-        populationImpact = Math.min(100, capacity / 2);
-        infrastructureGap = Math.min(100, travel * 3.5);
-        govAlignment = 85;
-        socialEquity = 85;
-        costEfficiency = 75;
-
+      if (p.type === "school_upgrade") {
+        const enrollment = Number(p.parameters?.enrollment || 300);
+        const travel = Number(p.parameters?.travelDistance || 5);
+        score += Math.min(25, (travel * 2) + (enrollment / 100));
+        reasons.push(`Travel distance of ${travel}km indicates significant transport and accessibility gaps for ${enrollment} active students.`);
+        reasons.push("Directly addresses Right to Education accessibility and enrollment retention metrics.");
+      } else if (p.type === "vocational_centre") {
+        const travel = Number(p.parameters?.travelDistance || 15);
+        const capacity = Number(p.parameters?.capacity || 100);
+        score += Math.min(20, (travel * 1) + (capacity / 10));
         reasons.push(`Vocational capacity of ${capacity} seats fills local skill training gaps with a travel radius reduction of ${travel}km.`);
         reasons.push("Empowers local unemployed youth; highly aligned with Skill India initiatives.");
-      } else if (p.type === "drainage_overhaul" || p.title?.toLowerCase().includes("drain") || p.title?.toLowerCase().includes("water")) {
-        const floodRadius = Number(p.parameters?.floodRadius || p.floodRadius || 2);
-        const affectedHouseholds = Number(p.parameters?.affectedHouseholds || p.affectedHouseholds || 500);
-
-        severity = Math.min(100, floodRadius * 35);
-        populationImpact = Math.min(100, affectedHouseholds / 10);
-        infrastructureGap = 90;
-        govAlignment = 75;
-        socialEquity = 80;
-        costEfficiency = 85;
-
+      } else if (p.type === "drainage_overhaul") {
+        const floodRadius = Number(p.parameters?.floodRadius || 2);
+        const affectedHouseholds = Number(p.parameters?.affectedHouseholds || 500);
+        score += Math.min(28, (floodRadius * 5) + (affectedHouseholds / 50));
         reasons.push(`Severe water stagnation affecting ${affectedHouseholds} households over a ${floodRadius}km flood radius.`);
-        reasons.push("Addresses critical hygiene and MCD waterlogging vector prevention guidelines.");
+        reasons.push("MCD flood prevention and solid waste/puddle vector disease mitigation.");
       } else {
+        score += 15;
         reasons.push("General municipal improvement with positive local public utility rating.");
       }
 
-      // Calculate weighted score
-      const score = Math.round(
-        (severity * 0.25) +
-        (populationImpact * 0.20) +
-        (citizenDemand * 0.20) +
-        (infrastructureGap * 0.15) +
-        (govAlignment * 0.10) +
-        (costEfficiency * 0.05) +
-        (socialEquity * 0.05)
-      );
+      // Add demand weight based on sector complaints
+      const grievanceWeight = Math.min(10, (activeGrievancesCount || 0) * 0.5);
+      score += grievanceWeight;
+      score = Math.min(98, Math.round(score));
 
       return {
         ...p,
-        score: Math.min(99, Math.max(10, score)),
+        score,
         rank: 0,
         demographicImpact: `${p.title} directly addresses high-density community gaps in ${sector || "All Sectors"}.`,
         infrastructureGapAnalysis: `Identified significant development lags in local public systems.`,
@@ -1311,15 +1105,6 @@ app.post("/api/analyze-and-compare-proposals", async (req, res) => {
           "Requires capital development budget allocation under MPLADS guidelines.",
           "Requires municipal coordinate approvals between PWD and MCD departments."
         ],
-        scoreBreakdown: {
-          severity,
-          populationImpact,
-          citizenDemand,
-          infrastructureGap,
-          govAlignment,
-          costEfficiency,
-          socialEquity
-        }
       };
     });
 
@@ -1330,7 +1115,7 @@ app.post("/api/analyze-and-compare-proposals", async (req, res) => {
     });
 
     const recommendationText = `Based on an objective quantitative analysis of local public datasets and active complaints in **${sector || "All Sectors"}**, the **${ranked[0]?.title}** should be prioritized first. 
-    It holds a development score of **${ranked[0]?.score}/100** computed via our 7-factor weighted priority score engine (Severity 25%, Population Impact 20%, Citizen Demand 20%, Infrastructure Gap 15%, Gov Alignment 10%, Cost Efficiency 5%, Social Equity 5%).
+    It holds a development score of **${ranked[0]?.score}/100** due to critical travel-distance distress metrics and direct citizen grievance volumes.
     The secondary proposal, **${ranked[1]?.title || "N/A"}**, is also vital but can be slated for Phase II of the MLA/MPLAD scheme local developmental budgets.`;
 
     return res.json({
@@ -1366,19 +1151,11 @@ app.post("/api/analyze-and-compare-proposals", async (req, res) => {
     Development Proposals to evaluate:
     ${JSON.stringify(proposals)}
 
-    You MUST calculate the objective developmental priority score (0-100) for each project using this exact 7-factor weighted formula:
-    1. Severity (25%): Safety risk, essential services affected, distance of travel distress
-    2. Population Impact (20%): Estimated citizens benefiting (e.g. enrollment size or capacity)
-    3. Citizen Demand (20%): Aligned with the number of active grievances logged in this sector
-    4. Infrastructure Gap (15%): Lack of local alternative facilities, accessibility deficiency
-    5. Government Plan Alignment (10%): Fit with MPLADS/local development master plans
-    6. Cost Efficiency (5%): Value for money, benefit per rupee spent
-    7. Social Equity (5%): Uplifting underserved community groups, co-education access
-    
-    Provide the exact breakdown of how the score was calculated (each factor out of 100) for each proposal in the response.
-
     Compare these proposals strictly against real-world civic demand, census metrics, and local constraints.
-    
+    For school upgrades, analyze enrollment vs. travel-distance (e.g. 12km travel is extremely high distress for kids).
+    For vocational centers, analyze unemployment rates, distance to nearest facility, and youth potential.
+    For drainage/sewage overhauls, analyze flood risk and household impact.
+
     Generate a structured JSON response comparing and ranking these proposals.
 
     The response schema must include:
@@ -1391,8 +1168,7 @@ app.post("/api/analyze-and-compare-proposals", async (req, res) => {
        - infrastructureGapAnalysis: String describing the infrastructure gap being filled
        - pros: Array of Strings listing advantages of prioritizing this project
        - cons: Array of Strings listing challenges/drawbacks
-       - scoreBreakdown: Object containing integer fields for severity, populationImpact, citizenDemand, infrastructureGap, govAlignment, costEfficiency, and socialEquity (each 0-100)
-    - aiRecommendationReport: A Markdown-formatted comprehensive recommendation report. It must clearly outline why the #1 ranked project should be prioritized over the others using the travel-distance, enrollment, or grievance numbers, and provide a convincing, objective justification matching the 7 weighted factors.
+    - aiRecommendationReport: A Markdown-formatted comprehensive recommendation report. It must clearly outline why the #1 ranked project should be prioritized over the others using the travel-distance, enrollment, or grievance numbers, and provide a convincing, objective justification.
     - dataGroundingUsed: Array of Strings listing public datasets or official portals (e.g. UDISE+, Census, PWD drainage maps) that should ground this decision.
     - disasterRiskIndex: String summarizing any municipal hazards or climate risks involved (e.g., Waterlogging vulnerability index).`;
 
@@ -1400,7 +1176,7 @@ app.post("/api/analyze-and-compare-proposals", async (req, res) => {
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
-        systemInstruction: "You are a professional MP decision support system. Your objective is to mathematically and logically evaluate competing public works proposals and justify ranking order based on traveler distance, citizen distress, and grievance data, using a strict 7-factor weighted prioritization model.",
+        systemInstruction: "You are a professional MP decision support system. Your objective is to mathematically and logically evaluate competing public works proposals and justify ranking order based on traveler distance, citizen distress, and grievance data.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -1417,25 +1193,12 @@ app.post("/api/analyze-and-compare-proposals", async (req, res) => {
                   demographicImpact: { type: Type.STRING },
                   infrastructureGapAnalysis: { type: Type.STRING },
                   pros: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  cons: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  scoreBreakdown: {
-                    type: Type.OBJECT,
-                    properties: {
-                      severity: { type: Type.INTEGER },
-                      populationImpact: { type: Type.INTEGER },
-                      citizenDemand: { type: Type.INTEGER },
-                      infrastructureGap: { type: Type.INTEGER },
-                      govAlignment: { type: Type.INTEGER },
-                      costEfficiency: { type: Type.INTEGER },
-                      socialEquity: { type: Type.INTEGER }
-                    },
-                    required: ["severity", "populationImpact", "citizenDemand", "infrastructureGap", "govAlignment", "costEfficiency", "socialEquity"]
-                  }
+                  cons: { type: Type.ARRAY, items: { type: Type.STRING } }
                 },
-                required: ["id", "title", "score", "rank", "demographicImpact", "infrastructureGapAnalysis", "pros", "cons", "scoreBreakdown"]
+                required: ["id", "title", "score", "rank", "demographicImpact", "infrastructureGapAnalysis", "pros", "cons"]
               }
             },
-            aiRecommendationReport: { type: Type.STRING, description: "Detailed Markdown executive summary and decision report for the MP." },
+            aiRecommendationReport: { type: Type.STRING, description: "Detailed Markdown executive summary and objective decision report for the MP." },
             dataGroundingUsed: { type: Type.ARRAY, items: { type: Type.STRING } },
             disasterRiskIndex: { type: Type.STRING }
           },
@@ -1491,7 +1254,7 @@ Analysis of recent citizen-submitted reports shows that **Water Logging & Draina
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-3.5-flash",
       contents: `You are the Senior Civic Planning Advisor to the Member of Parliament (MP).
       Review these active citizen grievances logged in our portal:
       \${complaintsSummary || "No active complaints."}
@@ -1511,6 +1274,263 @@ Analysis of recent citizen-submitted reports shows that **Water Logging & Draina
   } catch (err: any) {
     console.error("Gemini Recommendations Error:", err);
     res.status(500).json({ error: err.message || "Failed to generate AI recommendations." });
+  }
+});
+
+// Helper function to dispatch and log SMS notifications from server context
+function triggerSmsNotification(to: string, message: string) {
+  smsLogs.unshift({
+    id: "sms_" + Math.random().toString(36).substring(2, 11),
+    to,
+    message,
+    timestamp: new Date().toISOString(),
+    status: "delivered",
+    gateway: "simulated",
+    details: "SMS successfully dispatched from MP portal server."
+  });
+  if (smsLogs.length > 100) {
+    smsLogs.pop();
+  }
+}
+
+// API: Retrieve all grievances from Firestore
+app.get("/api/grievances", async (req, res) => {
+  try {
+    const grievancesRef = collection(db, "grievances");
+    const snapshot = await getDocs(grievancesRef);
+    const list: any[] = [];
+    snapshot.forEach((docSnap) => {
+      list.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    // Sort descending by createdAt
+    list.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+    res.json({ grievances: list });
+  } catch (err: any) {
+    console.error("Failed to retrieve grievances:", err);
+    res.status(500).json({ error: err.message || "Failed to retrieve grievances" });
+  }
+});
+
+// API: Create or consolidate a grievance from mobile client
+app.post("/api/grievance", async (req, res) => {
+  try {
+    const { citizenName, citizenContact, department, cleanLocation, description, createdAt, urgency } = req.body;
+
+    if (!citizenName || !citizenContact || !description) {
+      return res.status(400).json({ error: "citizenName, citizenContact, and description are required fields." });
+    }
+
+    // Geocode cleanLocation (landmark) if provided
+    let lat = 28.6304;
+    let lng = 77.2177;
+    let resolvedLocation = cleanLocation || "Connaught Place, New Delhi";
+
+    if (cleanLocation) {
+      const geo = await geocodeAddress(cleanLocation);
+      if (geo) {
+        lat = geo.lat;
+        lng = geo.lng;
+        resolvedLocation = geo.formattedAddress || cleanLocation;
+      } else {
+        // Add a tiny random offset to default New Delhi coordinates
+        lat += (Math.random() - 0.5) * 0.01;
+        lng += (Math.random() - 0.5) * 0.01;
+      }
+    } else {
+      lat += (Math.random() - 0.5) * 0.01;
+      lng += (Math.random() - 0.5) * 0.01;
+    }
+
+    // Classify sector based on coordinates
+    let sector = "Central Zone";
+    let assignedBody = "MCD";
+    if (lat > 28.62 && lng < 77.22) {
+      sector = "West Zone";
+      assignedBody = "MCD - West District Team";
+    } else if (lat < 28.60 && lng > 77.24) {
+      sector = "East Zone";
+      assignedBody = "MCD - East District Team";
+    } else if (lat >= 28.605 && lat <= 28.618 && lng >= 77.21 && lng <= 77.235) {
+      sector = "NDMC Area";
+      assignedBody = "NDMC - New Delhi Municipal Council";
+    } else {
+      sector = "Central Zone";
+      assignedBody = "MCD - Central District Team";
+    }
+
+    // Map department and urgency
+    const mappedDept = department || "Garbage Report";
+    const mappedUrgency = urgency || "Medium";
+
+    // Duplicate prevention check
+    const grievancesRef = collection(db, "grievances");
+    const q = query(grievancesRef, where("status", "==", "Open"));
+    const querySnapshot = await getDocs(q);
+    
+    let matchedGrievanceId: string | null = null;
+    let matchedGrievanceData: any = null;
+    const nowTime = new Date().getTime();
+
+    // Helper to calculate distance
+    const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
+
+    querySnapshot.forEach((docSnap) => {
+      if (matchedGrievanceId) return;
+      const data = docSnap.data();
+      const isSameDept = data.department === mappedDept;
+      const createdTime = new Date(data.createdAt).getTime();
+      const diffMins = Math.abs(nowTime - createdTime) / (1000 * 60);
+      const isWithinTimeBuffer = diffMins <= 45;
+      const dist = getDistance(lat, lng, data.latitude || 0, data.longitude || 0);
+      const isCloseArea = dist <= 350;
+
+      if (isSameDept && isWithinTimeBuffer && isCloseArea) {
+        matchedGrievanceId = docSnap.id;
+        matchedGrievanceData = { id: docSnap.id, ...data };
+      }
+    });
+
+    if (matchedGrievanceId) {
+      // Consolidate report under existing matched ticket
+      const existingDocRef = doc(db, "grievances", matchedGrievanceId);
+      const currentTraffic = matchedGrievanceData.trafficCount || 1;
+      const currentReporters = matchedGrievanceData.reportersList || [];
+      const updatedReporters = [
+        ...currentReporters,
+        {
+          name: citizenName,
+          contact: citizenContact,
+          reportedAt: new Date().toISOString(),
+          description: description,
+        }
+      ];
+
+      await updateDoc(existingDocRef, {
+        trafficCount: currentTraffic + 1,
+        reportersList: updatedReporters,
+      });
+
+      // Send SMS
+      const duplicateSmsMsg = `Dear ${citizenName}, your support has been registered for the active grievance regarding ${matchedGrievanceData.category || "Issue"}. ID: ${matchedGrievanceId}. Support count: ${currentTraffic + 1}. - MP Service Center`;
+      triggerSmsNotification(citizenContact, duplicateSmsMsg);
+
+      return res.status(200).json({
+        id: matchedGrievanceId,
+        message: "Grievance consolidated as duplicate.",
+        isConsolidated: true,
+        grievance: { id: matchedGrievanceId, ...matchedGrievanceData, trafficCount: currentTraffic + 1 }
+      });
+    } else {
+      // Create new grievance
+      const newGrievance = {
+        name: citizenName,
+        contact: citizenContact,
+        description: description,
+        department: mappedDept,
+        urgency: mappedUrgency,
+        cleanLocation: resolvedLocation,
+        summary: description.substring(0, 60) + "...",
+        latitude: lat,
+        longitude: lng,
+        status: "Open",
+        createdAt: createdAt || new Date().toISOString(),
+        imageUrl: "",
+        sector,
+        assignedBody,
+        category: mappedDept === "Garbage Report" ? "Solid Waste" : (mappedDept === "Water Logging" ? "Water Drainage" : "Road Infrastructure"),
+        severity: mappedUrgency,
+        urgencyScore: mappedUrgency === "High" ? 9 : (mappedUrgency === "Medium" ? 5 : 2),
+        affected_people: "Local residents and commuters",
+        suggested_department: mappedDept === "Potholes" ? "PWD" : "MCD",
+        confidence: 95,
+        keywords: ["citizen", "reported", mappedDept.toLowerCase()],
+        detectedLanguage: "English",
+        imageVerificationStatus: "not_attached",
+        imageVerificationMessage: "No image uploaded",
+        guardrailRelevanceScore: 1.0,
+        guardrailFlaggedReason: "NONE",
+        guardrailResolvedCategory: mappedDept === "Potholes" ? "Potholes" : (mappedDept === "Water Logging" ? "Water Logging" : "Garbage"),
+        guardrailExecutiveSummary: description,
+        trafficCount: 1,
+        reportersList: [
+          {
+            name: citizenName,
+            contact: citizenContact,
+            reportedAt: new Date().toISOString(),
+            description: description,
+          }
+        ]
+      };
+
+      const docRef = await addDoc(collection(db, "grievances"), newGrievance);
+
+      // Send SMS
+      const freshSmsMsg = `Dear ${citizenName}, your grievance regarding ${newGrievance.category} has been registered. ID: ${docRef.id}. Assigned: ${newGrievance.suggested_department}. - MP Service Center`;
+      triggerSmsNotification(citizenContact, freshSmsMsg);
+
+      return res.status(201).json({
+        id: docRef.id,
+        message: "Grievance created successfully.",
+        isConsolidated: false,
+        grievance: { id: docRef.id, ...newGrievance }
+      });
+    }
+  } catch (err: any) {
+    console.error("Failed to submit grievance:", err);
+    res.status(500).json({ error: err.message || "Failed to submit grievance" });
+  }
+});
+
+// API: Mark a grievance as resolved
+app.post("/api/grievance/resolve", async (req, res) => {
+  try {
+    const { id, adminLang } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ error: "Grievance id is required." });
+    }
+
+    const docRef = doc(db, "grievances", id);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      return res.status(404).json({ error: "Grievance not found." });
+    }
+
+    const grievanceData = docSnap.data();
+
+    // Update status to Resolved in Firestore
+    await updateDoc(docRef, { status: "Resolved" });
+
+    // Send SMS
+    if (grievanceData.contact) {
+      const citizenName = grievanceData.name || "Citizen";
+      const issueType = grievanceData.category || grievanceData.department || "Issue";
+      const smsMsg = adminLang === "hi"
+        ? `नमस्ते ${citizenName}, आपकी शिकायत (${issueType}) ID: ${id} का समाधान कर दिया गया है। नोएडा/गुरुग्राम को स्वच्छ और बेहतर बनाने में सहयोग के लिए धन्यवाद! - सांसद (MP) कार्यालय`
+        : `Dear ${citizenName}, your grievance regarding ${issueType} (ID: ${id}) has been resolved. Thank you for helping us keep our zone clean and functional! - Member of Parliament (MP) Office`;
+
+      triggerSmsNotification(grievanceData.contact, smsMsg);
+    }
+
+    res.json({ success: true, message: "Grievance resolved successfully." });
+  } catch (err: any) {
+    console.error("Failed to resolve grievance:", err);
+    res.status(500).json({ error: err.message || "Failed to resolve grievance" });
   }
 });
 

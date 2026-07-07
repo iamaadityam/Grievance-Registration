@@ -3,8 +3,8 @@ export interface Grievance {
   name: string;
   contact: string;
   description: string;
-  department: Department;
-  urgency: Urgency;
+  department: "Garbage Report" | "Water Logging" | "Potholes";
+  urgency: "Low" | "Medium" | "High";
   cleanLocation: string;
   summary: string;
   latitude: number;
@@ -33,13 +33,7 @@ export interface Grievance {
     reportedAt: string;
     description: string;
   }>;
-
-  // Accessibility & Verification fields
-  sentiment?: "Frustrated" | "Neutral" | "Angry";
-  recurringNeed?: string;
-  otpVerified?: boolean;
 }
 
-export type Department = "Garbage Report" | "Water Logging" | "Potholes" | "Street Lights" | "Sewage Overflow" | "Electricity & Power" | "Public Safety" | "Other Civic Issue" | string;
+export type Department = "Garbage Report" | "Water Logging" | "Potholes";
 export type Urgency = "Low" | "Medium" | "High";
-
