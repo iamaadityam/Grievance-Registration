@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Global default-deny safety net
+    // Global default-deny safety net (Pillar 4)
     match /{document=**} {
       allow read, write: if false;
     }
@@ -19,28 +19,76 @@ service cloud.firestore {
       return resource.data;
     }
 
+    // Path Variable Hardening (Pillar 3)
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Validation Blueprint for entity integrity (Pillar 2 & 5)
+    function isValidGrievance(data) {
+      return data.keys().hasAll([
+        'name', 'contact', 'description', 'department', 'urgency', 
+        'cleanLocation', 'summary', 'latitude', 'longitude', 'status', 
+        'createdAt', 'trafficCount', 'reportersList'
+      ]) &&
+      data.name is string && data.name.size() <= 128 &&
+      data.contact is string && data.contact.size() <= 20 &&
+      data.description is string && data.description.size() <= 5000 &&
+      data.department is string && (data.department == 'Garbage Report' || data.department == 'Water Logging' || data.department == 'Potholes') &&
+      data.urgency is string && (data.urgency == 'Low' || data.urgency == 'Medium' || data.urgency == 'High') &&
+      data.cleanLocation is string && data.cleanLocation.size() <= 512 &&
+      data.summary is string && data.summary.size() <= 1000 &&
+      (data.latitude is float || data.latitude is int) &&
+      (data.longitude is float || data.longitude is int) &&
+      data.status is string && (data.status == 'Open' || data.status == 'Resolved') &&
+      data.createdAt is string &&
+      data.trafficCount is int && data.trafficCount >= 1 &&
+      data.reportersList is list && data.reportersList.size() <= 200 &&
+      (!('imageUrl' in data) || data.imageUrl is string && data.imageUrl.size() <= 2048) &&
+      (!('sector' in data) || data.sector is string && data.sector.size() <= 128) &&
+      (!('assignedBody' in data) || data.assignedBody is string && data.assignedBody.size() <= 128) &&
+      (!('isSuggestion' in data) || data.isSuggestion is bool) &&
+      (!('impactScale' in data) || data.impactScale == null || data.impactScale is string && data.impactScale.size() <= 64) &&
+      (!('gpsAccuracyStatus' in data) || data.gpsAccuracyStatus is string && data.gpsAccuracyStatus.size() <= 64) &&
+      (!('accuracyMessage' in data) || data.accuracyMessage is string && data.accuracyMessage.size() <= 512) &&
+      (!('category' in data) || data.category is string && data.category.size() <= 128) &&
+      (!('severity' in data) || data.severity is string && data.severity.size() <= 64) &&
+      (!('urgencyScore' in data) || data.urgencyScore is int) &&
+      (!('affected_people' in data) || data.affected_people is string && data.affected_people.size() <= 512) &&
+      (!('suggested_department' in data) || data.suggested_department is string && data.suggested_department.size() <= 128) &&
+      (!('confidence' in data) || data.confidence is int || data.confidence is float) &&
+      (!('keywords' in data) || data.keywords is list && data.keywords.size() <= 20) &&
+      (!('detectedLanguage' in data) || data.detectedLanguage is string && data.detectedLanguage.size() <= 32) &&
+      (!('imageVerificationStatus' in data) || data.imageVerificationStatus is string && data.imageVerificationStatus.size() <= 64) &&
+      (!('imageVerificationMessage' in data) || data.imageVerificationMessage is string && data.imageVerificationMessage.size() <= 512) &&
+      (!('guardrailRelevanceScore' in data) || data.guardrailRelevanceScore is int || data.guardrailRelevanceScore is float) &&
+      (!('guardrailFlaggedReason' in data) || data.guardrailFlaggedReason is string && data.guardrailFlaggedReason.size() <= 512) &&
+      (!('guardrailResolvedCategory' in data) || data.guardrailResolvedCategory is string && data.guardrailResolvedCategory.size() <= 128) &&
+      (!('guardrailExecutiveSummary' in data) || data.guardrailExecutiveSummary is string && data.guardrailExecutiveSummary.size() <= 5000);
+    }
+
     match /grievances/{grievanceId} {
-      // Anyone can submit a grievance (required for citizen intake)
-      allow create: if true;
-      
-      // Anyone can read grievances (required to display/track reports on the citizen dashboard)
-      allow read: if true;
-      
-      // Update validation
-      allow update: if (
-        // Case A: Authenticated MP admin staff can perform any update
-        isSignedIn()
-      ) || (
-        // Case B: Unauthenticated citizen can ONLY update the duplicate consolidation fields to prevent DB clutter
-        incoming().diff(existing()).affectedKeys().hasOnly(['trafficCount', 'reportersList']) &&
-        incoming().trafficCount is int &&
-        incoming().trafficCount > 0 &&
-        incoming().reportersList is list &&
-        incoming().reportersList.size() <= 200
+      // Path Variable & Query Security (Pillar 3 & 8)
+      allow get: if isValidId(grievanceId);
+      allow list: if true; // Any citizen or admin can view the dashboard reports & real-time hotspots map
+
+      // Intake creation is guarded by validation blueprint (Pillar 2)
+      allow create: if isValidId(grievanceId) && isValidGrievance(incoming());
+
+      // Update validation - starts with mandatory validation wrapper (Pillar 4 & 9)
+      allow update: if isValidId(grievanceId) && isValidGrievance(incoming()) && (
+        isSignedIn() || (
+          // Citizen duplicate consolidation: only trafficCount and reportersList can be modified (Pillar 4)
+          incoming().diff(existing()).affectedKeys().hasOnly(['trafficCount', 'reportersList']) &&
+          existing().status == 'Open' && // Cannot append reports once resolved (Terminal State Locking - Pillar 6)
+          incoming().status == existing().status && // Cannot alter status
+          incoming().trafficCount == existing().trafficCount + 1 && // Sequential increment
+          incoming().reportersList.size() == existing().reportersList.size() + 1 // Sequential append
+        )
       );
 
-      // Only authenticated MP admin staff can delete grievances
-      allow delete: if isSignedIn();
+      // Deletions are restricted to registered administrators (Pillar 4)
+      allow delete: if isValidId(grievanceId) && isSignedIn();
     }
   }
 }

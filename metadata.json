@@ -1,5 +1,5 @@
 {
-  "name": "Remix: Copy of Remix: MP\u0027s Grievance Management System",
+  "name": "Remix: Civicpulse AI: Spot, Snap, Solve",
   "description": "A full-stack grievance management system for citizens to submit issues (Potholes, Water Logging, Garbage Report) and an administrative dashboard for the MP to track and resolve tickets using Firebase and Google Maps.",
   "requestFramePermissions": [
     "camera",

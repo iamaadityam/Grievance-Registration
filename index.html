@@ -3,11 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>CivicPulse AI</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/000000/government-city.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Only register Service Worker if we are not inside an iframe/sandbox or dev environment
+      let isIframe = false;
+      try {
+        isIframe = window.self !== window.top;
+      } catch (e) {
+        isIframe = true;
+      }
+      const isDevOrPreview = window.location.hostname.includes("localhost") || 
+                             window.location.hostname.includes("127.0.0.1") ||
+                             window.location.hostname.includes("ais-dev") ||
+                             window.location.hostname.includes("ais-pre");
+
+      if ("serviceWorker" in navigator && !isIframe && !isDevOrPreview) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js")
+            .then((reg) => console.log("[PWA] Service Worker registered:", reg.scope))
+            .catch((err) => {
+              console.warn("[PWA] Service Worker registration skipped or failed:", err.message || err);
+            });
+        });
+      } else {
+        console.log("[PWA] Service Worker registration bypassed (running in development, local, or iframe environment).");
+      }
+    </script>
   </body>
 </html>
 

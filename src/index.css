@@ -1,7 +1,153 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
+
+/* Accessibility Feature: High-Contrast Dark Mode Styles */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0b0f19 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-slate-100\/50,
+html.dark .bg-slate-50\/50 {
+  background-color: #0d121f !important;
+}
+
+html.dark .bg-white {
+  background-color: #0f172a !important; /* slate-900 */
+}
+
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #f1f5f9 !important; /* slate-100 */
+}
+
+html.dark .text-slate-600 {
+  color: #cbd5e1 !important; /* slate-300 */
+}
+
+html.dark .text-slate-500 {
+  color: #94a3b8 !important; /* slate-400 */
+}
+
+html.dark .border-slate-200,
+html.dark .border-slate-100,
+html.dark .border-slate-200\/50,
+html.dark .border-slate-200\/60 {
+  border-color: #1e293b !important; /* slate-800 */
+}
+
+/* Focus and input states for forms in dark mode */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #0d121f !important;
+  border-color: #1e293b !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  background-color: #1e293b !important;
+  border-color: #3b82f6 !important;
+}
+
+html.dark .focus\:bg-white:focus {
+  background-color: #1e293b !important;
+}
+
+/* Hover buttons and specific states */
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-50\/50:hover,
+html.dark .bg-slate-100 {
+  background-color: #1e293b !important;
+}
+
+/* Scrollbars in dark mode */
+html.dark ::-webkit-scrollbar {
+  width: 8px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #0b0f19;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Custom utility class to hide scrollbar across all major browsers */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}
+
+/* Specifically target the grievance description textarea */
+#grievance-desc::-webkit-scrollbar {
+  display: none !important;
+}
+
+#grievance-desc {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}
+
+/* Premium micro-animations & layout tweaks */
+@layer utilities {
+  .premium-glow {
+    box-shadow: 0 0 25px rgba(59, 130, 246, 0.12), 0 0 10px rgba(59, 130, 246, 0.04);
+  }
+  .premium-border {
+    border: 1px solid rgba(226, 232, 240, 0.8);
+  }
+}
+
+/* Global improvements for crisp font rendering and smooth experience */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Smooth active status transitions */
+.transition-card {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Glass effect elements for dashboards */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+html.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+
+
