@@ -1,6 +1,6 @@
 <div align="center">
 
-<img width="150" height="100" alt="image" src="https://github.com/user-attachments/assets/2948feca-d9b4-4892-a57f-6e9dfe4f8363" />
+<img width="150" height="100" alt="image" src="https://github.com/user-attachments/assets/e31284a2-a0b2-4fd2-8a80-8eecc6251268" />
 
 
 # 🌍 CivicPulse AI
