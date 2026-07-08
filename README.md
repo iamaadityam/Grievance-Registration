@@ -1,6 +1,7 @@
 <div align="center">
 
-# <img src="./assets/logo.png" alt="CivicPulse AI Logo" width="140"/>
+<img width="150" height="100" alt="image" src="https://github.com/user-attachments/assets/2948feca-d9b4-4892-a57f-6e9dfe4f8363" />
+
 
 # 🌍 CivicPulse AI
 
@@ -222,19 +223,35 @@ CivicPulse AI directly addresses the Build with AI: Code for Communities challen
 
 ## Citizen Portal
 
-*(Insert Screenshot)*
+<img width="402" height="830" alt="image" src="https://github.com/user-attachments/assets/0aea47e2-38cd-48d1-a0ed-a195b83723af" />
+<img width="402" height="592" alt="image" src="https://github.com/user-attachments/assets/e8756671-dab5-4802-a572-819f75921e0a" />
+
+<img width="401" height="826" alt="image" src="https://github.com/user-attachments/assets/b731e00c-cba9-485a-becb-9f2b3783afc4" />
+<img width="395" height="597" alt="image" src="https://github.com/user-attachments/assets/bd87aa78-433d-4e05-abb3-2021877170aa" />
+
+<img width="393" height="825" alt="image" src="https://github.com/user-attachments/assets/8948305c-9976-4f40-a569-610e95d4af0c" />
+<img width="385" height="592" alt="image" src="https://github.com/user-attachments/assets/57d21014-5407-4a5b-9c20-cc8558080a7b" />
+
+<img width="387" height="822" alt="image" src="https://github.com/user-attachments/assets/fee5f9d6-dc45-42ae-9fee-debc46f964c1" />
 
 ---
 
 ## MP Dashboard
 
-*(Insert Screenshot)*
+<img width="402" height="683" alt="image" src="https://github.com/user-attachments/assets/2ec82db8-ddf4-4557-9e08-473b2e368b6d" />
+<img width="395" height="482" alt="image" src="https://github.com/user-attachments/assets/6d008dfe-0889-44f4-bd1d-6f4b71ab9e5f" />
+<img width="400" height="702" alt="image" src="https://github.com/user-attachments/assets/3afe0413-5e17-4e21-b8e2-bb91a9039a7c" />
+<img width="390" height="518" alt="image" src="https://github.com/user-attachments/assets/be777bdc-e238-4ab4-b14f-26b89f0e844e" />
+
+<img width="342" height="667" alt="image" src="https://github.com/user-attachments/assets/16517c2a-dd57-41ba-be1d-8217586c1013" />
 
 ---
 
-## Google Maps Hotspot View
-
-*(Insert Screenshot)*
+## Smart MP Planner
+<img width="393" height="656" alt="image" src="https://github.com/user-attachments/assets/58331a71-005b-4023-8e4e-6822af60207c" />
+<img width="388" height="608" alt="image" src="https://github.com/user-attachments/assets/8e5874eb-43fe-431a-8151-5453c3e22dc2" />
+<img width="392" height="637" alt="image" src="https://github.com/user-attachments/assets/fe651450-7e47-4513-9fc0-017ca3235803" />
+<img width="350" height="570" alt="image" src="https://github.com/user-attachments/assets/32a1a66c-3262-44e8-aac1-82f0cd2e2f9b" />
 
 ---
 
@@ -275,7 +292,8 @@ https://github.com/iamaadityam
 ### Vanshika Tanwar
 
 LinkedIn:
-https://www.linkedin.com/in/vanshika-tanwar-3319171b7/
+https://linkedin.com/in/vanshika-tanwar-3319171b7/
+
 ---
 
 ### Shibam
