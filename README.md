@@ -4,7 +4,7 @@
 
 
 # 🌍 CivicPulse AI
-
+Spot, Snap, Solve
 ### Bridging the Gap of Urban and Rural Areas Between People's Street Problems and Governance Strategy
 
 ### 🏆 Build with AI: Code for Communities
