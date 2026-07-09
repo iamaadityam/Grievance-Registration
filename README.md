@@ -284,9 +284,6 @@ npm run dev
 LinkedIn:
 https://linkedin.com/in/malhotra-aaditya
 
-GitHub:
-https://github.com/iamaadityam
-
 ---
 
 ### Vanshika Tanwar
@@ -296,7 +293,8 @@ https://linkedin.com/in/vanshika-tanwar-3319171b7/
 
 ---
 
-### Shibam
+### Shibam Dey
+LinkedIn: https://www.linkedin.com/in/shibamdey37
 
 ---
 
