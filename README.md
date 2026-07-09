@@ -195,12 +195,19 @@ https://civicpulse-ai-spot-snap-solve-696821570384.asia-east1.run.app
 
 ---
 
+# 💥 Pitch deck
+
+Please find a 12 slide pitch deck here. https://github.com/iamaadityam/CivicPulseAI/blob/main/CivicPulse_AI_Command_Center.pdf
+
+---
+
 # 🎯 Alignment with Build with AI
 
 CivicPulse AI directly addresses the Build with AI: Code for Communities challenge by:
 
 - ✅ Collecting citizen feedback
 - ✅ AI-powered complaint understanding
+- ✅ Multilingual support (5 languages)
 - ✅ Intelligent prioritization
 - ✅ Geographic hotspot detection
 - ✅ Evidence-based constituency planning
@@ -212,10 +219,11 @@ CivicPulse AI directly addresses the Build with AI: Code for Communities challen
 
 - WhatsApp Business Integration
 - Voice-based complaint submission
-- Multilingual support
+- Extended multilingual support 
 - Public datasets (Census, data.gov.in)
 - Satellite imagery
 - Predictive infrastructure planning
+- Contributor progam
 
 ---
 
